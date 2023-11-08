@@ -28,14 +28,18 @@ def create_batch_xy(m_hours, histories_arr, overlap= False):
         """)
   return x_matrix,y_matrix
 
-def histories_to_array(histories):
+def histories_to_array(histories, get_dates=False):
   """
-  Convert a dictionary of histories to a 2D array
+  Convert a dictionary of histories to a 2D array. If get_dates is True, also
+  return the dates for the histories in a pandas DatetimeIndex.
   """
   values = []
   # Cutoff, so all histories have the same length
   cutoff = min([len(histories[ticker]) for ticker in histories])
   for ticker in histories:
-    values.append(histories[ticker]["Close"].values[:cutoff])
-  values = np.array(values).T
-  return values
+    stock_closes = histories[ticker]["Close"].values[:cutoff]
+    values.append(stock_closes)
+  if get_dates:
+    dates = histories[ticker].index.values[:cutoff]
+    return np.array(values).T, dates
+  return np.array(values).T

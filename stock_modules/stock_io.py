@@ -32,7 +32,7 @@ def _accept_ticker(history, ticker):
     print(f"Ticker {ticker} has NaN values, removing it")
     return False
   # If the average value of one stock is less than 20 or > 100, remove it
-  if history["Close"].mean() < 20 or history["Close"].mean() > 100:
+  if history["Close"].mean() < 20 or history["Close"].mean() > 200:
     print(f"""
       Ticker {ticker} has average value {history['Close'].mean()},
       removing it""")
@@ -53,6 +53,7 @@ def get_histories(tickers, max_tickers=10):
   histories = {}
   for ticker in tickers.tickers.keys():
     history = tickers.tickers[ticker].history(period="730d", interval="1h")
+    print(history)
     if not _accept_ticker(history, ticker):
       continue
     histories[ticker] = history
