@@ -35,11 +35,12 @@ def histories_to_array(histories, get_dates=False):
   """
   values = []
   # Cutoff, so all histories have the same length
-  cutoff = min([len(histories[ticker]) for ticker in histories])
+  max_num_rows = min([len(histories[ticker]) for ticker in histories])
   for ticker in histories:
-    stock_closes = histories[ticker]["Close"].values[:cutoff]
+    # take the last max_num_rows rows of the history
+    stock_closes = histories[ticker]["Close"].values[-max_num_rows:]
     values.append(stock_closes)
   if get_dates:
-    dates = histories[ticker].index.values[:cutoff]
+    dates = histories[ticker].index.values[-max_num_rows:]
     return np.array(values).T, dates
   return np.array(values).T
