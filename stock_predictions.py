@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 import random
 import os
-from TimeSeriesDataset import TimeSeriesDataset
 # curve fitting
 import tensorflow as tf
 # random forest
@@ -24,26 +23,42 @@ def read_tickers_from_excel(sheet="Stock", exchange="HEL", ticker_column="Ticker
     random.shuffle(tickers)
     return tickers
 
+def accept_ticker(history, ticker):
+    """ Criteria, for whether to accept data from a ticker or not.
+    """
+    if len(history) < 4000:
+        print(f"Ticker {ticker} has less than 4000 entries, removing it")
+        return False
+    # Remove tickers with Stock Splits
+    if history["Stock Splits"].sum() > 0:
+        print(f"Ticker {ticker} has stock splits, removing it")
+        return False
+    # Remove tickers with NaN values
+    if history.isnull().values.any():
+        print(f"Ticker {ticker} has NaN values, removing it")
+        return False
+    # If the average value of one stock is less than 20 or > 100, remove it
+    if history["Close"].mean() < 20 or history["Close"].mean() > 100:
+        print(f"Ticker {ticker} has average value {history['Close'].mean()}, removing it")
+        return False
+    return True
+    
+
 def get_histories(tickers,max_tickers=10):
-    # Get the historical data for each stock
+    """
+    Returns a dictionary of historical stock data for a given list of tickers.
+
+    Parameters:
+    tickers (list): A list of stock tickers to retrieve data for.
+    max_tickers (int): The maximum number of tickers to retrieve data for.
+
+    Returns:
+    dict: A dictionary of historical stock data for the given tickers.
+    """
     histories = {}
     for ticker in tickers.tickers.keys():
         history = tickers.tickers[ticker].history(period="730d", interval="1h")
-        # Remove tickers with less than 4000 entries
-        if len(history) < 4000:
-            print(f"Ticker {ticker} has less than 2000 entries, removing it")
-            continue
-        # Remove tickers with Stock Splits
-        if history["Stock Splits"].sum() > 0:
-            print(f"Ticker {ticker} has stock splits, removing it")
-            continue
-        # Remove tickers with NaN values
-        if history.isnull().values.any():
-            print(f"Ticker {ticker} has NaN values, removing it")
-            continue
-        # If the average value of one stock is less than 1 or > 1000, remove it
-        if history["Close"].mean() < 20 or history["Close"].mean() > 100:
-            print(f"Ticker {ticker} has average value {history['Close'].mean()}, removing it")
+        if not accept_ticker(history, ticker):
             continue
         histories[ticker] = history
         print(f"Added {ticker}")
@@ -77,68 +92,37 @@ def plot_numpy_arr_cols(arr, ax=None, ind_conversion={}):
         ax.plot(arr[:,col_id], label=label)
     return ax
 
-def create_stateful_tf_model(input_shape, batch_size = 1):
-    """ Create a LSTM model which takes in the values of multiple stocks in the last hour, and
-    outputs the predicted (residual) value for each stock in the next time step.
-    Input shape is (N,1) and output shape is (N,1).
-    """
-    model = tf.keras.models.Sequential([
-        tf.keras.layers.LSTM(32, return_sequences=True, stateful=True, input_shape=input_shape,batch_size = batch_size),
-        tf.keras.layers.LSTM(16, return_sequences=True, stateful=True),
-        tf.keras.layers.LSTM(8, return_sequences=True, stateful=True),
-        tf.keras.layers.Flatten(),
-        tf.keras.layers.Dense(32, activation='relu'),
-        # Output (N,1)
-        tf.keras.layers.Dense(input_shape[0], activation='linear'),
-        tf.keras.layers.Reshape((input_shape[0],))
-
-    ])
-    print(f"Model summary: {model.summary()}")
-    # Compile the model
-    model.compile(optimizer='adam', loss='mae')
-    return model
-
 def create_tf_model(M, N):
-    """ Create a LSTM model which takes in M values of N stocks (MxN), and
+    """ Create an LSTM model which takes in M values of N stocks (MxN), and
     outputs the predicted value for each stock in the next time step (1 x N).
     M is the batch size, and N is the number of stocks.
     """
-    inputs = tf.keras.layers.Input(shape=(M,N))
+    inputs = tf.keras.layers.Input(shape=(M, N))
     x = tf.keras.layers.BatchNormalization()(inputs)
-    x = tf.keras.layers.LSTM(32, return_sequences=True)(x)
-    x = tf.keras.layers.LSTM(16, return_sequences=True)(x)
-    x = tf.keras.layers.LSTM(8, return_sequences=True)(x)
+    # Bidirectional LSTM layers
+    x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences=True, kernel_regularizer="l2"))(inputs)
+    x = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(16, return_sequences=True))(x)
+
+    # Attention layer
+    x = tf.keras.layers.Attention()([x, x, x])
+
+    # Flatten and add dropout
     x = tf.keras.layers.Flatten()(x)
+    x = tf.keras.layers.Dropout(0.5)(x)
+
+    # Dense layer
     x = tf.keras.layers.Dense(32, activation='relu')(x)
+
     # Output (1,N)
     outputs = tf.keras.layers.Dense(N, activation='linear')(x)
+
     model = tf.keras.Model(inputs=inputs, outputs=outputs)
 
     print(f"Model summary: {model.summary()}")
     # Compile the model
-    model.compile(optimizer='adam', loss='mse')
+    model.compile(optimizer='adam', loss='huber')
     return model
 
-
-def plot_dataset(ds : TimeSeriesDataset, index_conversion):
-    """ Plot the dataset ds, with index conversion ind_conversion
-    """
-    axes = []
-    fig,ax = plt.subplots()
-    plot_numpy_arr_cols(ds.residual_array, ax=ax, ind_conversion=index_conversion)
-    ax.set_title("Residual data")
-    axes.append((fig,ax))
-    fig,ax = plt.subplots()
-    plot_numpy_arr_cols(ds.trend_array, ax=ax, ind_conversion=index_conversion)
-    ax.set_title("Trend data")
-    axes.append((fig,ax))
-    fig,ax = plt.subplots()
-    plot_numpy_arr_cols(ds.seasonality_array, ax=ax, ind_conversion=index_conversion)
-    ax.set_title("Seasonal data")
-    axes.append((fig,ax))
-    return axes
-
-TICKERS_TO_FOLLOW = []
 def create_batch_XY(MHOURS, histories_arr, overlap= False):
     """
     Batch X data into sequences of length MHOURS (from T to T+n), and Y data into sequences of length 1 (T+n+1)
@@ -158,23 +142,30 @@ def create_batch_XY(MHOURS, histories_arr, overlap= False):
     print(f"Batched 'histories_arr' ({histories_arr.shape}) to 'X' ({X.shape}) and 'Y' ({Y.shape})")
     return X,Y
 
-
+TICKERS_TO_FOLLOW = []
 if __name__ == "__main__":
-    RENEW_HISTORIES = True
+    # Fetch data from Yahoo Finance
+    RENEW_HISTORIES = False
+    # Train a new model
     RENEW_MODEL = True
+    # Show the training data
     SHOW_TRAIN_DS = False
-    USE_RANDOM_FOREST = False
-    MHOURS = 6
+    # Number of lagged hours to use as input
+    MHOURS = 24
+    # Test set size
     TEST_SIZE = 0.2
-    RECURSE_TO = 50
-    MAX_TICKERS = 20
+    # How many hours to predict into the future based only on past data
+    RECURSE_TO = 48
+    # Maximum number of tickers to to use
+    MAX_TICKERS = 50
+    # Training parameters
     EPOCHS = 1000
     BATCH_SIZE = 32
     PATIENCE = 25
+    # Which data to use
     SHEET = "Stock"
-    EXCHANGE = "NYQ"
+    EXCHANGE = "HEL"
     TICKER_COLUMN = "Ticker"
-    TICKERS_TO_FOLLOW = json.load(open("TICKERS_TO_FOLLOW.json", "r"))
 
     
     histories_arr = None
@@ -199,9 +190,17 @@ if __name__ == "__main__":
     else:
         TICKERS_TO_FOLLOW = json.load(open("TICKERS_TO_FOLLOW.json", "r"))
         histories_arr = np.load("histories_arr.npy")
+        # Only take max tickers
+        histories_arr = histories_arr[:,:min(histories_arr.shape[1],MAX_TICKERS)]
 
     IND_CONVERSION = {i:t for i,t in enumerate(TICKERS_TO_FOLLOW)}
     print(f"Shape of histories array: {histories_arr.shape}")
+
+    if SHOW_TRAIN_DS:
+        ax = plot_numpy_arr_cols(histories_arr[:,:5], ind_conversion=IND_CONVERSION)
+        ax.set_title("History of 5 stocks")
+        ax.grid()
+        plt.show()
 
     # Batch X data into sequences of length MHOURS (from T to T+n), and Y data into sequences of length 1 (T+n+1)
 
@@ -211,7 +210,7 @@ if __name__ == "__main__":
 
     histories_arr = minmax_scaler.transform(histories_arr)
 
-    X, Y = create_batch_XY(MHOURS, histories_arr)
+    X, Y = create_batch_XY(MHOURS, histories_arr, overlap=True)
 
     X_og = X.copy()
     Y_og = Y.copy()
@@ -229,7 +228,7 @@ if __name__ == "__main__":
         model = tf.keras.models.load_model("model.h5")
     else:
         model = create_tf_model(MHOURS, X.shape[2])
-        early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=PATIENCE)
+        early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=PATIENCE, restore_best_weights=True)
         model.fit(X_train, Y_train, epochs=EPOCHS, batch_size=BATCH_SIZE, validation_data=(X_test, Y_test), verbose=1, callbacks=[early_stop], shuffle=True)
         model.save("model.h5")
     # Predict the next hours for the test data
@@ -245,7 +244,7 @@ if __name__ == "__main__":
     ax.set_title("True and predicted values for 5 stocks")
     
     # Test on the last TEST_SIZE of the data
-    test_begin_idx = int(histories_arr.shape[0]*TEST_SIZE)
+    test_begin_idx = int(histories_arr.shape[0]*(1-TEST_SIZE))
     X_overlap, Y_overlap = create_batch_XY(MHOURS, histories_arr[test_begin_idx-MHOURS:], overlap=True)
     # predict every hour
     Y_pred_overlap = model.predict(X_overlap)
@@ -263,9 +262,46 @@ if __name__ == "__main__":
     ax.legend()
     ax.set_title("True and predicted values for 5 stocks")
 
+
+    # Start from the 100th latest hour, predict the next hour, and then use the predicted hour to predict the next hour, and so on
+    X_start = X_test[-RECURSE_TO,:,:]
+    print(f"X_start shape: {X_start.shape}")
+    Y_preds_recurse = X_start[-1,:].reshape(1,X.shape[2])
+    Y_true_recurse = Y_test[-RECURSE_TO:,:]
+    print(f"Y_preds_recurse shape: {Y_preds_recurse.shape}")
+    print(f"Y_true_recurse shape: {Y_true_recurse.shape}")
+
+    for i in range(RECURSE_TO - 1):
+        Y_pred = model.predict(X_start.reshape(1,MHOURS,X.shape[2]))
+        Y_preds_recurse = np.concatenate([Y_preds_recurse, Y_pred], axis=0)
+        # Shift X_start one hour forward
+        X_start = np.concatenate([X_start[1:,:], Y_pred], axis=0)
+    Y_preds_recurse = np.array(Y_preds_recurse).squeeze()
+    print(f"Y_preds_recurse shape: {Y_preds_recurse.shape}")
+
+    # Invert scaling of predictions
+    Y_preds_recurse = minmax_scaler.inverse_transform(Y_preds_recurse)
+    Y_true_recurse = minmax_scaler.inverse_transform(Y_true_recurse)
+
+    # Select 5 stocks with the smallest mae to plot
+    mae_recursive_preds = np.mean(np.abs(Y_preds_recurse - Y_true_recurse), axis=0)
+    stock_idxs = np.argsort(mae_recursive_preds)[:10]
+    # only take 5 randomly
+    stock_idxs = np.random.choice(stock_idxs, 4, replace=False)
+
+    fig, ax = plt.subplots()
+    for stock_idx in stock_idxs:
+        ax.plot(Y_true_recurse[:,stock_idx], label=f"True {IND_CONVERSION[stock_idx]}")
+        ax.plot(Y_preds_recurse[:,stock_idx], label=f"Predicted {IND_CONVERSION[stock_idx]}")
+    ax.legend()
+    ax.set_title(f"True and predicted values for 4 stocks up to {RECURSE_TO} hours in the future")
+
+    
     # Calculate the error of the predictions
-    mae_of_preds = np.mean(np.abs(Y_pred_overlap - Y_overlap), axis=0)
-    print(f"Mean absolute error of predictions: {mae_of_preds}")
+    mae_hourly_preds = np.mean(np.abs(Y_pred - Y_test), axis=0)
+    print(f"Mean absolute error of hourly predictions: {mae_hourly_preds}")
+
+    print(f"Mean absolute error of recursive predictions: {mae_recursive_preds}")
 
     # As a baseline, calculate how much the price changes per hour on the test data
     average_hourly_change = np.mean(np.abs(Y_overlap[1:] - Y_overlap[:-1]), axis=0)
