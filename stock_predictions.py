@@ -29,14 +29,68 @@ if not os.path.exists("./figures"):
   os.mkdir("./figures")
 
 ENCODING = locale.getpreferredencoding()
+HISTORY_ARRAY_PATH = "./histories_arr.npy"
+MODEL_PATH = "./model.h5"
+SELECTED_TICKERS_PATH = "./TICKERS_TO_FOLLOW.json"
 
-TICKERS_TO_FOLLOW = []
+
+def read_histories(RENEW_HISTORIES, MAX_TICKERS, SHEET, EXCHANGE, TICKER_COLUMN, custom_tickers = {}):
+        """
+        Reads stock histories from Yahoo Finance API and returns the selected tickers and their histories as a numpy array.
+
+        Args:
+        ENCODING (str): The encoding of the file.
+        RENEW_HISTORIES (bool): A boolean value indicating whether to renew the histories or not.
+        MAX_TICKERS (int): The maximum number of tickers to follow.
+        SHEET (str): The name of the sheet in the excel file.
+        EXCHANGE (str): The name of the exchange.
+        TICKER_COLUMN (str): The name of the column containing the tickers.
+
+        Returns:
+        tuple: A tuple containing the selected tickers and their histories as a numpy array.
+        """
+        histories_arr = None
+        # if either there is no history array or the histories should be renewed
+        if not os.path.exists(HISTORY_ARRAY_PATH) or RENEW_HISTORIES:
+            # Read tickers from excel
+            if not custom_tickers:
+                tickers_from_excel = read_tickers_from_excel(
+                    sheet=SHEET,
+                    exchange=EXCHANGE,
+                    ticker_column=TICKER_COLUMN
+                )
+            # Use custom tickers
+            else:
+                tickers_from_excel = custom_tickers
+
+            print(f"Fetching data for tickers: {tickers_from_excel}")
+
+            tickers = yf.tickers.Tickers(tickers_from_excel)
+            print(f"Tickers found from yfinance: {tickers.tickers.keys()}")
+            histories = get_histories(tickers, max_tickers=MAX_TICKERS)
+            actually_selected_tickers = list(histories.keys())
+            print(f"Selected tickers: {actually_selected_tickers}")
+            histories_arr = histories_to_array(histories)
+            with open(SELECTED_TICKERS_PATH, "w", encoding=ENCODING) as f:
+                json.dump(actually_selected_tickers, f)
+            np.save(HISTORY_ARRAY_PATH, histories_arr)
+        else:
+            actually_selected_tickers = json.load(
+                open(SELECTED_TICKERS_PATH, "r", encoding=ENCODING)
+            )
+            histories_arr = np.load(HISTORY_ARRAY_PATH)
+        # Only take max tickers
+            histories_arr = histories_arr[:,:min(histories_arr.shape[1],MAX_TICKERS)]
+        return actually_selected_tickers,histories_arr
+
+
+
 if __name__ == "__main__":
   # Fetch data from Yahoo Finance
   RENEW_HISTORIES = False
 
   # Train a new model
-  RENEW_MODEL = True
+  RENEW_MODEL = False
 
   # Show the training data
   SHOW_TRAIN_DS = False
@@ -62,40 +116,13 @@ if __name__ == "__main__":
   SHEET = "Stock"
   EXCHANGE = "HEL"
   TICKER_COLUMN = "Ticker"
+  CUSTOM_TICKERS = {}
 
-  histories_arr = None
-  if not os.path.exists("./histories_arr.npy") or RENEW_HISTORIES:
-    if not TICKERS_TO_FOLLOW:
-      tickers_from_excel = read_tickers_from_excel(
-          sheet=SHEET,
-          exchange=EXCHANGE,
-          ticker_column=TICKER_COLUMN
-        )
-      with open("hand_picked_tickers.json", "r", encoding=ENCODING) as f:
-        hand_picked = json.load(f)
-      tickers_from_excel = list(set(tickers_from_excel + hand_picked))
-      print(f"Tickers found from excel: {tickers_from_excel}")
-    else:
-      tickers_from_excel = TICKERS_TO_FOLLOW
 
-    tickers = yf.tickers.Tickers(tickers_from_excel)
-    print(f"Tickers found from yfinance: {tickers.tickers.keys()}")
-    histories = get_histories(tickers, max_tickers=MAX_TICKERS)
-    TICKERS_TO_FOLLOW = list(histories.keys())
-    print(f"Selected tickers: {TICKERS_TO_FOLLOW}")
-    histories_arr = histories_to_array(histories)
-    with open("TICKERS_TO_FOLLOW.json", "w", encoding=ENCODING) as f:
-      json.dump(TICKERS_TO_FOLLOW, f)
-    np.save("histories_arr.npy", histories_arr)
-  else:
-    TICKERS_TO_FOLLOW = json.load(
-        open("TICKERS_TO_FOLLOW.json", "r", encoding=ENCODING)
-      )
-    histories_arr = np.load("histories_arr.npy")
-    # Only take max tickers
-    histories_arr = histories_arr[:,:min(histories_arr.shape[1],MAX_TICKERS)]
 
-  IND_CONVERSION = {i:t for i,t in enumerate(TICKERS_TO_FOLLOW)}
+  actually_read_tickers, histories_arr = read_histories(RENEW_HISTORIES, MAX_TICKERS, SHEET, EXCHANGE, TICKER_COLUMN, CUSTOM_TICKERS)
+
+  IND_CONVERSION = {i:t for i,t in enumerate(actually_read_tickers)}
   print(f"Shape of histories array: {histories_arr.shape}")
 
   if SHOW_TRAIN_DS:
@@ -105,16 +132,16 @@ if __name__ == "__main__":
     ax.grid()
     plt.savefig("./figures/stock_hist.eps")
 
-  # Batch X data into sequences of length MHOURS (from T to T+n), and Y data
-  # into sequences of length 1 (T+n+1)
   minmax_scaler = MinMaxScaler()
   # Fit the scaler to the first 1-TEST_SIZE of the data
   minmax_scaler = minmax_scaler.fit(
       histories_arr[:-int(histories_arr.shape[0]*TEST_SIZE),:]
-    )
+  )
 
   histories_arr = minmax_scaler.transform(histories_arr)
 
+  # Batch X data into sequences of length MHOURS (from T to T+n), and Y data
+  # into sequences of length 1 (T+n+1)
   X, Y = create_batch_xy(MHOURS, histories_arr, overlap=True)
 
   X_og = X.copy()
@@ -128,10 +155,10 @@ if __name__ == "__main__":
   X_test = X[-test_sz:,:,:]
   Y_test = Y[-test_sz:,:]
 
-  # Fit model, by showing it the data from the last MHOURS hours, and
+  # Fit model by showing it the data from the last MHOURS hours, and
   # predicting the next hour
-  if os.path.exists("model.h5") and not RENEW_MODEL:
-    model = tf.keras.models.load_model("model.h5")
+  if os.path.exists(MODEL_PATH) and not RENEW_MODEL:
+    model = tf.keras.models.load_model(MODEL_PATH)
   else:
     model = create_tf_model(MHOURS, X.shape[2])
     early_stop = tf.keras.callbacks.EarlyStopping(
@@ -143,24 +170,16 @@ if __name__ == "__main__":
               epochs=EPOCHS, batch_size=BATCH_SIZE,
               validation_data=(X_test, Y_test), verbose=1,
               callbacks=[early_stop], shuffle=True)
-    model.save("model.h5")
+    model.save(MODEL_PATH)
+  
   # Predict the next hours for the test data
   Y_pred = model.predict(X_test)
-
-  # Plot true values and predicted values for 5 selected stocks
-  stock_idxs = np.random.randint(0,X.shape[2],5)
-  fig, ax = plt.subplots()
-  for stock_idx in stock_idxs:
-    ax.plot(Y_test[:,stock_idx], label=f"True {IND_CONVERSION[stock_idx]}")
-    ax.plot(Y_pred[:,stock_idx], label=f"Predicted {IND_CONVERSION[stock_idx]}")
-  ax.legend()
-  ax.set_title("True and predicted values for 5 stocks")
 
   # Test on the last TEST_SIZE of the data
   test_begin_idx = int(histories_arr.shape[0]*(1-TEST_SIZE))
   X_overlap, Y_overlap = create_batch_xy(
       MHOURS, histories_arr[test_begin_idx-MHOURS:], overlap=True
-    )
+  )
   # predict every hour
   Y_pred_overlap = model.predict(X_overlap)
 
@@ -177,8 +196,10 @@ if __name__ == "__main__":
             label=f"Predicted {IND_CONVERSION[stock_idx]}")
   ax.legend()
   ax.set_title("True and predicted values for 5 stocks")
+  # Save
+  plt.savefig("./figures/1h-ahead-predictions.eps")
 
-  # Start from the 100th latest hour, predict the next hour, and then use the
+  # Start from the RECURSE_TO latest hour, predict the next hour, and then use the
   # predicted hour to predict the next hour, and so on
   X_start = X_test[-RECURSE_TO,:,:]
   print(f"X_start shape: {X_start.shape}")
@@ -217,7 +238,7 @@ if __name__ == "__main__":
                True and predicted values for 4 stocks up to {RECURSE_TO} hours
                in the future
                """)
-  plt.savefig("./figures/prediction.eps")
+  plt.savefig("./figures/recursive_prediction.eps")
 
   # Calculate the error of the predictions
   mae_hourly_preds = np.mean(np.abs(Y_pred - Y_test), axis=0)
