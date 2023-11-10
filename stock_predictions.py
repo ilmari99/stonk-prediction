@@ -26,38 +26,42 @@ from stock_modules.stock_ml import create_tf_model
 # Figures
 from stock_modules.stock_plot import plot_numpy_arr_cols
 if not os.path.exists("./figures"):
-  os.mkdir("./figures")
+    os.mkdir("./figures")
 
 ENCODING = locale.getpreferredencoding()
 HISTORY_ARRAY_PATH = "./histories_arr.npy"
 MODEL_PATH = "./model.h5"
 SELECTED_TICKERS_PATH = "./TICKERS_TO_FOLLOW.json"
 
-
-def read_histories(RENEW_HISTORIES, MAX_TICKERS, SHEET, EXCHANGE, TICKER_COLUMN, custom_tickers = {}):
+def read_histories(renew_histories, max_tickers,
+                   sheet, exchange, ticker_column,
+                   custom_tickers = None):
     """
-    Reads stock histories from Yahoo Finance API and returns the selected tickers and their histories as a numpy array.
+    Reads stock histories from Yahoo Finance API and returns the selected
+    tickers and their histories as a numpy array.
 
     Args:
     ENCODING (str): The encoding of the file.
-    RENEW_HISTORIES (bool): A boolean value indicating whether to renew the histories or not.
+    RENEW_HISTORIES (bool): A boolean value indicating whether to renew the
+    histories or not.
     MAX_TICKERS (int): The maximum number of tickers to follow.
     SHEET (str): The name of the sheet in the excel file.
     EXCHANGE (str): The name of the exchange.
     TICKER_COLUMN (str): The name of the column containing the tickers.
 
     Returns:
-    tuple: A tuple containing the selected tickers and their histories as a numpy array.
+    tuple: A tuple containing the selected tickers and their histories as a
+    numpy array.
     """
-    histories_arr = None
+    histories_arr_new = None
     # if either there is no history array or the histories should be renewed
-    if not os.path.exists(HISTORY_ARRAY_PATH) or RENEW_HISTORIES:
+    if not os.path.exists(HISTORY_ARRAY_PATH) or renew_histories:
         # Read tickers from excel
         if not custom_tickers:
             tickers_from_excel = read_tickers_from_excel(
-                sheet=SHEET,
-                exchange=EXCHANGE,
-                ticker_column=TICKER_COLUMN
+                sheet=sheet,
+                exchange=exchange,
+                ticker_column=ticker_column
             )
         # Use custom tickers
         else:
@@ -67,21 +71,22 @@ def read_histories(RENEW_HISTORIES, MAX_TICKERS, SHEET, EXCHANGE, TICKER_COLUMN,
 
         tickers = yf.tickers.Tickers(tickers_from_excel)
         print(f"Tickers found from yfinance: {tickers.tickers.keys()}")
-        histories = get_histories(tickers, max_tickers=MAX_TICKERS)
+        histories = get_histories(tickers, max_tickers=max_tickers)
         actually_selected_tickers = list(histories.keys())
         print(f"Selected tickers: {actually_selected_tickers}")
-        histories_arr = histories_to_array(histories)
+        histories_arr_new = histories_to_array(histories)
         with open(SELECTED_TICKERS_PATH, "w", encoding=ENCODING) as f:
             json.dump(actually_selected_tickers, f)
-        np.save(HISTORY_ARRAY_PATH, histories_arr)
+        np.save(HISTORY_ARRAY_PATH, histories_arr_new)
     else:
         actually_selected_tickers = json.load(
             open(SELECTED_TICKERS_PATH, "r", encoding=ENCODING)
         )
-        histories_arr = np.load(HISTORY_ARRAY_PATH)
+        histories_arr_new = np.load(HISTORY_ARRAY_PATH)
     # Only take max tickers
-        histories_arr = histories_arr[:,:min(histories_arr.shape[1],MAX_TICKERS)]
-    return actually_selected_tickers,histories_arr
+        histories_arr_new = histories_arr_new[:,:min(histories_arr_new.shape[1],
+                                             max_tickers)]
+    return actually_selected_tickers,histories_arr_new
 
 
 
@@ -120,7 +125,10 @@ if __name__ == "__main__":
 
 
 
-    actually_read_tickers, histories_arr = read_histories(RENEW_HISTORIES, MAX_TICKERS, SHEET, EXCHANGE, TICKER_COLUMN, CUSTOM_TICKERS)
+    actually_read_tickers, histories_arr = \
+        read_histories(RENEW_HISTORIES, MAX_TICKERS,
+                       SHEET, EXCHANGE, TICKER_COLUMN,
+                       CUSTOM_TICKERS)
 
     IND_CONVERSION = {i:t for i,t in enumerate(actually_read_tickers)}
     print(f"Shape of histories array: {histories_arr.shape}")
@@ -191,7 +199,8 @@ if __name__ == "__main__":
     stock_idxs = np.random.randint(0,X.shape[2],5)
     fig, ax = plt.subplots()
     for stock_idx in stock_idxs:
-        ax.plot(Y_overlap[:,stock_idx], label=f"True {IND_CONVERSION[stock_idx]}")
+        ax.plot(Y_overlap[:,stock_idx],
+                label=f"True {IND_CONVERSION[stock_idx]}")
         ax.plot(Y_pred_overlap[:,stock_idx],
                 label=f"Predicted {IND_CONVERSION[stock_idx]}")
     ax.legend()
@@ -199,8 +208,8 @@ if __name__ == "__main__":
     # Save
     plt.savefig("./figures/1h-ahead-predictions.eps")
 
-    # Start from the RECURSE_TO latest hour, predict the next hour, and then use the
-    # predicted hour to predict the next hour, and so on
+    # Start from the RECURSE_TO latest hour, predict the next hour, and then
+    # use the predicted hour to predict the next hour, and so on
     X_start = X_test[-RECURSE_TO,:,:]
     print(f"X_start shape: {X_start.shape}")
     Y_preds_recurse = X_start[-1,:].reshape(1,X.shape[2])
@@ -243,7 +252,8 @@ if __name__ == "__main__":
     # Calculate the error of the predictions
     mae_hourly_preds = np.mean(np.abs(Y_pred - Y_test), axis=0)
     print(f"Mean absolute error of hourly predictions: {mae_hourly_preds}")
-    print(f"Mean absolute error of recursive predictions: {mae_recursive_preds}")
+    print(f"""Mean absolute error of recursive predictions:
+          {mae_recursive_preds}""")
 
     # As a baseline, calculate how much the price changes per hour on the test
     # data
