@@ -22,7 +22,7 @@ def plot_numpy_arr_cols(arr, ax=None, ind_conversion:dict=None):
       ax.plot(arr[:,col_id], label=label)
   return ax
 
-def plot_strategy_based_on_predictions(data, model, window_hours, ind_conversion:dict=None, show = True):
+def plot_strategy_based_on_predictions(data, transformed_data, model, window_hours, inversion= lambda x : x, ind_conversion:dict=None, show = True):
   """ Plot the true values of the data, and the predicted values.
   """
 

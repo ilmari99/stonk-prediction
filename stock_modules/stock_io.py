@@ -27,8 +27,8 @@ def _accept_ticker(history, ticker):
   if history["Stock Splits"].sum() > 0:
     print(f"Ticker {ticker} has stock splits, removing it")
     return False
-  # Remove tickers with NaN values
-  if history.isnull().values.any():
+  # Remove tickers with NaN values at Close column
+  if history["Close"].isnull().values.any():
     print(f"Ticker {ticker} has NaN values, removing it")
     return False
   # If the average value of one stock is less than 20 or > 100, remove it
@@ -53,7 +53,7 @@ def get_histories(tickers, max_tickers=10):
   histories = {}
   for ticker in tickers.tickers.keys():
     history = tickers.tickers[ticker].history(period="730d", interval="1h")
-    print(history)
+    #print(history)
     if not _accept_ticker(history, ticker):
       continue
     histories[ticker] = history
