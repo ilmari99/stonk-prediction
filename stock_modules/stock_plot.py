@@ -7,28 +7,36 @@ from invest_strategies import calculate_optimal_invest_strategy, calculate_profi
 from stock_modules.stock_transform import create_batch_xy
 
 def plot_numpy_arr_cols(arr, ax=None, ind_conversion:dict=None):
-  """ Plot the columns of a 2d numpy array.
-  If ax is None, create a new figure.
-  ind_conversion is a dictionary mapping column indices to names, which will
-  be used as labels.
-  """
-  if ax is None:
-    _, ax = plt.subplots()
-  for col_id in range(arr.shape[1]):
-    if col_id in ind_conversion:
-      label = ind_conversion[col_id]
-    else:
-      label = ""
-      ax.plot(arr[:,col_id], label=label)
-  return ax
+    """ Plot the columns of a 2d numpy array.
+    If ax is None, create a new figure.
+    ind_conversion is a dictionary mapping column indices to names, which will
+    be used as labels.
+    """
+    if ax is None:
+        _, ax = plt.subplots()
+    for col_id in range(arr.shape[1]):
+        if col_id in ind_conversion:
+            label = ind_conversion[col_id]
+        else:
+            label = ""
+            ax.plot(arr[:,col_id], label=label)
+    return ax
 
-def plot_strategy_based_on_predictions(data, transformed_data, model, window_hours, inversion= lambda x : x, ind_conversion:dict=None, show = True):
-  """ Plot the true values of the data, and the predicted values.
-  """
+def plot_strategy_based_on_predictions(data, transformed_data, model,
+                                       window_hours, inversion= lambda x : x,
+                                       ind_conversion:dict=None,
+                                       show = True):
+    """ Plot the true values of the data, and the predicted values.
+    """
 
-  _, Y_test = create_batch_xy(window_hours, data, overlap=True)
-  optimal_strat = calculate_optimal_invest_strategy(data)
-  print(f"Profit on optimal strategy: {calculate_profit_on_invest_strategy(data, optimal_strat)}")
+    _, y_test = create_batch_xy(window_hours, data, overlap=True)
+    optimal_strat = calculate_optimal_invest_strategy(data)
+    print(
+            f"""
+            Profit on optimal strategy:
+            {calculate_profit_on_invest_strategy(data, optimal_strat)}
+            """
+        )
 
   invest_strat = test_invest_strategy(data, transformed_data, window_hours, model, inversion=inversion)
   print(f"Profit on invest strategy: {calculate_profit_on_invest_strategy(data, invest_strat)}")
