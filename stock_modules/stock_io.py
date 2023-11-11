@@ -18,26 +18,6 @@ def read_tickers_from_excel(sheet="Stock", exchange="HEL",
     return tickers
 
 def _accept_ticker(history, ticker):
-    """ Criteria, for whether to accept data from a ticker or not.
-    """
-    if len(history) < 4000:
-        print(f"Ticker {ticker} has less than 4000 entries, removing it")
-        return False
-    # Remove tickers with Stock Splits
-    if history["Stock Splits"].sum() > 0:
-        print(f"Ticker {ticker} has stock splits, removing it")
-        return False
-    # Remove tickers with NaN values
-    if history.isnull().values.any():
-        print(f"Ticker {ticker} has NaN values, removing it")
-        return False
-    # If the average value of one stock is less than 20 or > 100, remove it
-    if history["Close"].mean() < 20 or history["Close"].mean() > 200:
-        print(f"""
-        Ticker {ticker} has average value {history['Close'].mean()},
-        removing it""")
-        return False
-    return True
   """ Criteria, for whether to accept data from a ticker or not.
   """
   if len(history) < 4000:
