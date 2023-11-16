@@ -48,15 +48,11 @@ def calculate_profit_on_invest_strategy(data : np.ndarray,
         profit += np.dot(mask[:,stock_idx], data[:,stock_idx])
     return profit
 
-def test_invest_strategy(data : np.ndarray,
-                         window_hours : int, model) -> np.ndarray:
-    """ Calculates how much profit would be made by using the model to predict
-    the price of stocks one hour ahead.
+def test_invest_strategy(data : np.ndarray, transformed_data : np.ndarray, window_hours : int, model, inversion = lambda x : x) -> np.ndarray:
+    """ Calculates how much profit would be made by using the model to predict the price of stocks one hour ahead.
     At the beginning we are not holding.
-    If we are not holding, and price at T+1 is higher than price at T, we buy 1
-    (marked as -1)
-    If we are holding, and price at T+1 is lower than price at T, we sell 1
-    (marked as 1)
+    If we are not holding, and price at T+1 is higher than price at T, we buy 1 (marked as -1)
+    If we are holding, and price at T+1 is lower than price at T, we sell 1 (marked as 1)
 
     At each point the price at T+1 is predicted using the last window_hours
     hours of data.
@@ -66,9 +62,12 @@ def test_invest_strategy(data : np.ndarray,
     """
 
     mask = np.zeros(data.shape)
+    Xt, Yt = create_batch_xy(window_hours, transformed_data, overlap=True)
     x, _ = create_batch_xy(window_hours, data, overlap=True)
-    # Predict the next hours for the data
-    y_pred = model.predict(x)
+    # Predict the next hours based on the _transformed data_, and the inversion
+    y_pred = model.predict(Xt)
+    Y_pred = inversion(Y_pred)
+    
     # We are not holding any stocks at the beginning
     holding_bool = np.zeros(data.shape[1])
     # Loop through the last hour of X and the model predictions
@@ -98,3 +97,4 @@ def test_invest_strategy(data : np.ndarray,
                 if holding_bool[stock_idx] == 1:
                     mask[-1,stock_idx] = 1
     return mask
+
