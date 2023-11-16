@@ -98,7 +98,7 @@ if __name__ == "__main__":
     RENEW_HISTORIES = False
 
     # Train a new model
-    RENEW_MODEL = False
+    RENEW_MODEL = True
 
     # Show the training data
     SHOW_TRAIN_DS = False
