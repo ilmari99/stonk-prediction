@@ -62,5 +62,8 @@ def add_time_delta_column(df : pd.DataFrame, date_col_name="date"):
     df["Time Delta"] = time_deltas
     # datatype is int, since the measures are hourly
     df["Time Delta"] = df["Time Delta"].astype(int)
+    cols = list(df.columns)
+    cols = [cols[0]] + [cols[-1]] + cols[1:-1]
+    df = df[cols]
     return df
 
