@@ -3,6 +3,7 @@ Python module handling data reshaping and transformation.
 """
 
 import numpy as np
+import pandas as pd
 
 def create_batch_xy(m_hours, histories_arr, overlap= False):
     """
@@ -48,3 +49,18 @@ def histories_to_array(histories, get_dates=False):
         return np.array(values).T, dates
 
     return np.array(values).T
+
+def add_time_delta_column(df : pd.DataFrame, date_col_name="date"):
+    """ Return a list of time differences between consecutive rows in the dataframe.
+    The time difference at index i, is the amount of time between the rows i and i+1.
+    The time difference is in hours.
+    """
+    time_deltas = []
+    for i in range(len(df)-1):
+        time_deltas.append((df[date_col_name].iloc[i+1] - df[date_col_name].iloc[i]).total_seconds()/3600)
+    time_deltas.append(-1)
+    df["Time Delta"] = time_deltas
+    # datatype is int, since the measures are hourly
+    df["Time Delta"] = df["Time Delta"].astype(int)
+    return df
+
