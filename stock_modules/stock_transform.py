@@ -18,6 +18,9 @@ def create_batch_xy(m_hours, histories_arr, overlap= False):
     """
     x_matrix = []
     y_matrix = []
+    if not isinstance(histories_arr, np.ndarray):
+        histories_arr = np.array(histories_arr.values)
+        print(histories_arr)
     for i in range(0,histories_arr.shape[0]-m_hours,1 if overlap else m_hours):
         x_matrix.append(histories_arr[i:i+m_hours,:])
         y_matrix.append(histories_arr[i+m_hours,:])

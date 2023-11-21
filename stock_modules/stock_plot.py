@@ -44,13 +44,15 @@ def plot_strategy_based_on_predictions(data, transformed_data, model,
     fig, ax = plt.subplots(3,2)
     for i in range(3):
         for j in range(2):
-            stock_idx = i*2+j
+            stock_idx = np.random.randint(0, data.shape[1])
             ax[i,j].plot(data[:,stock_idx], label=ind_conversion[stock_idx])
             # Mark sells with red dots, and buys with green dots
             sell_idx = np.argwhere(invest_strat[:,stock_idx] == 1)
             buy_idx = np.argwhere(invest_strat[:,stock_idx] == -1)
             ax[i,j].scatter(sell_idx, data[sell_idx,stock_idx], color="red", label="Sell")
             ax[i,j].scatter(buy_idx, data[buy_idx,stock_idx], color="green", label="Buy")
+            stock_profit = np.dot(invest_strat[:,stock_idx], data[:,stock_idx])
+            ax[i,j].set_title(f"Profit: {stock_profit}")
             ax[i,j].legend()
     fig.suptitle("True and predicted values for 6 stocks")
     if show:
