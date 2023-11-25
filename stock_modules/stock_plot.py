@@ -3,7 +3,7 @@ Python module handling figure generation.
 """
 import matplotlib.pyplot as plt
 import numpy as np
-from invest_strategies import calculate_optimal_invest_strategy, calculate_profit_on_invest_strategy, test_invest_strategy
+from invest_strategies import calculate_optimal_invest_strategy, calculate_profit_on_invest_strategy, strategy_mask_from_price_model, strategy_mask_from_updown_model
 from stock_modules.stock_transform import create_batch_xy
 
 def plot_numpy_arr_cols(arr, ax=None, ind_conversion:dict=None):
@@ -25,7 +25,9 @@ def plot_numpy_arr_cols(arr, ax=None, ind_conversion:dict=None):
 def plot_strategy_based_on_predictions(data, transformed_data, model,
                                        window_hours, inversion= lambda x : x,
                                        ind_conversion:dict=None,
-                                       show = True):
+                                       model_type="updown",
+                                       show = True,
+                                       output_scale = (0,1)):
     """ Plot the true values of the data, and the predicted values.
     """
 
@@ -38,7 +40,7 @@ def plot_strategy_based_on_predictions(data, transformed_data, model,
             """
         )
 
-    invest_strat = test_invest_strategy(data, transformed_data, window_hours, model, inversion=inversion)
+    invest_strat = strategy_mask_from_price_model(data, transformed_data, window_hours, model, inversion=inversion) if model_type == "price" else strategy_mask_from_updown_model(transformed_data, window_hours, model, output_scale=output_scale)
     print(f"Profit on invest strategy: {calculate_profit_on_invest_strategy(data, invest_strat)}")
     # Plot 6 columns from the test data, and mark predicted buys and sells
     fig, ax = plt.subplots(3,2)
