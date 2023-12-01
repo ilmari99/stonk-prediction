@@ -36,7 +36,7 @@ class TemporalEmbedding(layers.Layer):
             if self.freq == "t":
                 self.minute_embed = layers.Embedding(4, d_model)
         else:
-            self.time_embed = tf.keras.layers.Embedding(1000, d_model)
+            self.time_embed = layers.Embedding(1000, d_model)
 
     def call(self, inputs:keras.Input):
         # Extract the time features from the input tensor
@@ -94,7 +94,7 @@ class DataEmbedding(layers.Layer):
         self.temporal_embedding = TemporalEmbedding(d_model=self.d_model,
                                                     embed_type=self.embed_type,
                                                     freq=self.freq)
-        self.dropout = tf.keras.layers.Dropout(rate=self.dropout_rate)
+        self.dropout = layers.Dropout(rate=self.dropout_rate)
 
     def call(self, inputs:keras.Input, inputs_mark:keras.Input):
         # Apply the value embedding to the input tensor
