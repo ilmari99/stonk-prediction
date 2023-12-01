@@ -88,7 +88,7 @@ class DataEmbedding(layers.Layer):
 
         # Create the embedding layers
         self.value_embedding = layers.Conv1D(filters=d_model, kernel_size=3,
-                                                padding="same", use_bias=False,
+                                                padding="same",
                                                 kernel_initializer="he_normal",
                                                 activation=layers.LeakyReLU)
         self.temporal_embedding = TemporalEmbedding(d_model=self.d_model,
@@ -156,36 +156,39 @@ def transformer_decoder(inputs:keras.Input,
     # Add-Normalize
     return layers.LayerNormalization(epsilon=1e-6, axis=(1,2))(x+res)
 
-def build_model(input_shape:tuple[PositiveInt,PositiveInt],
-                output_shape:PositiveInt,
-                head_size:PositiveInt,
-                num_heads:PositiveInt,
-                ff_dim:PositiveInt,
-                num_transformer_blocks:PositiveInt,
-                mlp_units:tuple[PositiveInt,...],
+def build_model(m:PositiveInt, n:PositiveInt,
+                output_dim:PositiveInt=3,
+                head_size:PositiveInt=16,
+                num_heads:PositiveInt=16,
+                ff_dim:PositiveInt=32,
+                num_transformer_blocks:PositiveInt=1,
+                mlp_units:tuple[PositiveInt,...]=(64,),
                 dropout:UnitFloat=0.,
                 mlp_dropout:UnitFloat=0.):
-    # Input declaration
-    context = keras.Input(shape=input_shape)
-    context_stamps = keras.Input(shape=(input_shape[0],1))
-    inputs = keras.Input(shape=input_shape)
-    input_stamps = keras.Input(shape=(input_shape[0],1))
+    input_shape = (m,n)
 
-    # Encoder layers
+    # Input declaration -> [BxLxN, BxLx1]
+    context = keras.Input(shape=input_shape)
+    context_stamps = keras.Input(shape=(m,1))
+    inputs = keras.Input(shape=input_shape)
+    input_stamps = keras.Input(shape=(m,1))
+
+    # Encoder layers -> BxLxC
     x = DataEmbedding(head_size)(context, context_stamps)
     for _ in range(num_transformer_blocks):
         x = transformer_encoder(x, head_size, num_heads, ff_dim, dropout)
 
-    # Decoder layers
+    # Decoder layers -> BxLxC
     y = DataEmbedding(inputs, input_stamps)
     for _ in range(num_transformer_blocks):
         y = transformer_decoder(y, x, head_size, num_heads, ff_dim, dropout)
 
-    #Output layers
-    y = layers.GlobalAveragePooling1D(data_format="channels_first")(y)
+    # Output layers -> BxNx3
+    y = layers.Conv1DTranspose(filters=n, kernel_size=3, padding="same")(y)
+    y = layers.Permute((2,1))(y)
     for dim in mlp_units:
         y = layers.Dense(dim, activation="relu")(y)
         y = layers.Dropout(mlp_dropout)(y)
-    outputs = layers.Dense(output_shape, activation="linear")(y)
+    outputs = layers.Dense(output_dim, activation="linear")(y)
 
     return keras.Model([context,context_stamps,inputs,input_stamps],outputs)
