@@ -7,62 +7,18 @@ from pydantic import Field, PositiveInt
 from typing_extensions import Annotated
 
 from tensorflow import keras
-import numpy as np
 import tensorflow as tf
 from keras import layers
 
 UnitFloat = Annotated[float, Field(strict=True, ge=0., le=1.)]
 
-def positional_encoding(length:PositiveInt, depth:PositiveInt):
-    depth = depth/2
-
-    positions = np.arange(length)[:, np.newaxis]     # (seq, 1)
-    depths = np.arange(depth)[np.newaxis, :]/depth   # (1, depth)
-
-    angle_rates = 1 / (10000**depths)         # (1, depth)
-    angle_rads = positions * angle_rates      # (pos, depth)
-
-    pos_encoding = np.concatenate(
-        [np.sin(angle_rads), np.cos(angle_rads)],
-        axis=-1)
-
-    return tf.cast(pos_encoding, dtype=tf.float32)
-
-class TokenEmbedding(layers.Layer):
-    """
-    Keras implementation of the Token embedding layer for Autoformers.
-    """
-    def __init__(self, d_model):
-        super(TokenEmbedding, self).__init__()
-        # Create the 1D convolutional layer
-        self.conv1d = layers.Conv1D(
-            filters=d_model,
-            kernel_size=3,
-            padding="circular",
-            use_bias=False,
-            kernel_initializer="he_normal",
-            activation=layers.LeakyReLU
-        )
-
-    def call(self, inputs):
-        # Transpose the input tensor so that the shape is
-        # (batch_size, max_length, num_features)
-        x = tf.transpose(inputs, perm=[0, 2, 1])
-
-        # Apply the 1D convolutional layer
-        x_embedded = self.conv1d(x)
-
-        # Transpose the output tensor so that the shape is
-        # (batch_size, max_length, d_model)
-        x_embedded = tf.transpose(x_embedded, perm=[0, 2, 1])
-
-        return x_embedded
-
 class TemporalEmbedding(layers.Layer):
     """
     Keras implementation of the Temporal embedding layer for Autoformers.
     """
-    def __init__(self, d_model, embed_type="fixed", freq="h"):
+    def __init__(self, d_model:PositiveInt,
+                 embed_type:str="fixed",
+                 freq:str="h"):
         super(TemporalEmbedding, self).__init__()
 
         self.d_model = d_model
@@ -82,12 +38,16 @@ class TemporalEmbedding(layers.Layer):
         else:
             self.time_embed = tf.keras.layers.Embedding(1000, d_model)
 
-    def call(self, inputs):
+    def call(self, inputs:keras.Input):
         # Extract the time features from the input tensor
-        hour = inputs[:, :, 3]
-        weekday = inputs[:, :, 2]
-        day = inputs[:, :, 1]
-        month = inputs[:, :, 0]
+        # hour = inputs[:, :, 3]
+        hour = tf.slice(inputs, [0,0,3], [-1,-1,1])
+        # weekday = inputs[:, :, 2]
+        weekday = tf.slice(inputs, [0,0,2], [-1,-1,1])
+        # day = inputs[:, :, 1]
+        day = tf.slice(inputs, [0,0,1], [-1,-1,1])
+        # month = inputs[:, :, 0]
+        month = tf.slice(inputs, [0,0,0], [-1,-1,1])
 
         # Embed the time features
         if self.embed_type == "fixed":
@@ -97,7 +57,8 @@ class TemporalEmbedding(layers.Layer):
             month_embedded = self.month_embed(month)
 
             if self.freq == "t":
-                minute = inputs[:, :, 4]
+                # minute = inputs[:, :, 4]
+                minute = tf.slice(inputs, [0,0,4], [-1,-1,1])
                 minute_embedded = self.minute_embed(minute)
             else:
                 minute_embedded = tf.zeros_like(hour_embedded)
@@ -110,12 +71,14 @@ class TemporalEmbedding(layers.Layer):
 
         return x_embedded
 
-class DataEmbedding(tf.keras.layers.Layer):
+class DataEmbedding(layers.Layer):
     """
     Keras implementation of the Positionless Data embedding layer for
     Autoformers.
     """
-    def __init__(self, d_model, embed_type="fixed", freq="h", dropout_rate=0.1):
+    def __init__(self, d_model:PositiveInt,
+                 embed_type:str="fixed", freq:str="h",
+                 dropout_rate:UnitFloat=0.1):
         super(DataEmbedding, self).__init__()
 
         self.d_model = d_model
@@ -124,13 +87,16 @@ class DataEmbedding(tf.keras.layers.Layer):
         self.dropout_rate = dropout_rate
 
         # Create the embedding layers
-        self.value_embedding = TokenEmbedding(d_model=self.d_model)
+        self.value_embedding = layers.Conv1D(filters=d_model, kernel_size=3,
+                                                padding="same", use_bias=False,
+                                                kernel_initializer="he_normal",
+                                                activation=layers.LeakyReLU)
         self.temporal_embedding = TemporalEmbedding(d_model=self.d_model,
                                                     embed_type=self.embed_type,
                                                     freq=self.freq)
         self.dropout = tf.keras.layers.Dropout(rate=self.dropout_rate)
 
-    def call(self, inputs, inputs_mark):
+    def call(self, inputs:keras.Input, inputs_mark:keras.Input):
         # Apply the value embedding to the input tensor
         x_embedded = self.value_embedding(inputs)
 
@@ -191,6 +157,7 @@ def transformer_decoder(inputs:keras.Input,
     return layers.LayerNormalization(epsilon=1e-6, axis=(1,2))(x+res)
 
 def build_model(input_shape:tuple[PositiveInt,PositiveInt],
+                output_shape:PositiveInt,
                 head_size:PositiveInt,
                 num_heads:PositiveInt,
                 ff_dim:PositiveInt,
@@ -219,6 +186,6 @@ def build_model(input_shape:tuple[PositiveInt,PositiveInt],
     for dim in mlp_units:
         y = layers.Dense(dim, activation="relu")(y)
         y = layers.Dropout(mlp_dropout)(y)
-    outputs = layers.Dense(1, activation="linear")(y)
+    outputs = layers.Dense(output_shape, activation="linear")(y)
 
     return keras.Model([context,context_stamps,inputs,input_stamps],outputs)
