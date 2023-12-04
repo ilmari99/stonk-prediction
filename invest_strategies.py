@@ -47,6 +47,38 @@ def calculate_profit_on_invest_strategy(data : np.ndarray,
         profit += np.dot(mask[:,stock_idx], data[:,stock_idx])
     return profit
 
+def strategy_mask_from_direction_model(transformed_data : np.ndarray,
+                                       window_hours : int,
+                                        model) -> np.ndarray:
+    """Calculates a trading mask based on a model that predicts whether the price of the stock will go up, down or stay flat one hour ahead."""
+    mask = np.zeros(transformed_data.shape)
+    X, Y = create_batch_xy(window_hours, transformed_data, overlap=True, y_direction=True, to_onehot=True, create_labels=False)
+    Y_pred = model.predict(X)
+
+    holding_bool = np.zeros(transformed_data.shape[1])
+    # Loop through batches, and make the mask based on the predictions
+    for i in range(X.shape[0]):
+        ith_predictions = Y_pred[i,:,:]
+        # Calculate the argmax for eacl column
+        ith_predictions = np.argmax(ith_predictions, axis=0)
+        print(ith_predictions)
+        # Check all stocks
+        for stock_idx in range(transformed_data.shape[1]):
+            # If we are not holding the stock, buy if the price is predicted to go up
+            if not holding_bool[stock_idx] and ith_predictions[stock_idx] == 2:
+                mask[i,stock_idx] = -1
+                holding_bool[stock_idx] = 1
+            # If we are holding the stock, sell if the price is predicted to go down
+            elif holding_bool[stock_idx] and ith_predictions[stock_idx] == 0:
+                mask[i,stock_idx] = 1
+                holding_bool[stock_idx] = 0
+    # Sell all remaining stocks at the end if we have any
+    for stock_idx in range(transformed_data.shape[1]):
+        if holding_bool[stock_idx]:
+            mask[-1,stock_idx] = 1
+    return mask
+
+
 def strategy_mask_from_updown_model(transformed_data : np.ndarray,
                                     window_hours : int,
                                     model,
