@@ -123,3 +123,66 @@ def create_price_prediction_model(m, n):
     # Compile the model
     model.compile(optimizer="adam", loss="huber")
     return model
+
+class SkipTDLoss(tf.keras.losses.Loss):
+    """ A loss funciton, that calculates the given loss but ignores the first column from y_true and y_pred.
+    """
+    def __init__(self, base_loss_fun, **kwargs):
+        super().__init__(**kwargs)
+        self.base_loss_fun = base_loss_fun
+    
+    def call(self, y_true, y_pred):
+        # Skip first column
+        return self.base_loss_fun(y_true[:,1:], y_pred[:,1:])
+    
+class MultiSoftmaxLoss(tf.keras.losses.Loss):
+    """ Calculates the mean categorical crossentropy loss for each stock prediction.
+    So input is (batch_size, nhours, nstocks), and output is (batch_size, 3, nstocks)
+    The CCE/log loss is calculated for each stock and then averaged.
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.loss_fun = tf.keras.losses.CategoricalCrossentropy()
+    
+    def call(self, y_true, y_pred):
+        pred_losses = []
+        # Calculate the softmax loss for each one-hot prediction
+        # Y data is (3, nstocks), so take one column at a time, compare it to the true value and calculate the loss
+        for i in range(y_true.shape[2]):
+            y_pred_i = y_pred[:,:,i]
+            y_true_i = y_true[:,:,i]
+            #print(f"Comparing y_true_i shape: {y_true_i.shape} to y_pred_i shape: {y_pred_i.shape}")
+            pred_losses.append(self.loss_fun(y_true_i, y_pred_i))
+        # Now we have a list of losses for each stock, so we can calculate the mean
+        pred_losses = tf.stack(pred_losses, axis=0)
+        mean_loss = tf.reduce_mean(pred_losses, axis=0)
+        return mean_loss
+    
+class MultiAccuracy(tf.keras.metrics.Metric):
+    """ Calculates the average prediction accuracy for the predictions.
+    So for stock, we calculate the accuracy of the prediction, sum them and then divide by the number of stocks.
+    """
+    def __init__(self, has_timedelta = False, **kwargs):
+        super().__init__(**kwargs)
+        self.start_idx = 0 if not has_timedelta else 1
+        self.accuracy = tf.keras.metrics.CategoricalAccuracy()
+    
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        # Calculate the accuracy for each stock
+        accs = []
+        for i in range(self.start_idx, y_true.shape[2]):
+            y_true_i = y_true[:,:,i]
+            y_pred_i = y_pred[:,:,i]
+            # y_pred_i to onehot
+            y_pred_i = tf.one_hot(tf.argmax(y_pred_i, axis=1), depth=3)
+            accs.append(self.accuracy(y_true_i, y_pred_i))
+        # Now we have a list of accuracies for each stock, so we can calculate the mean
+        accs = tf.stack(accs, axis=0)
+        mean_acc = tf.reduce_mean(accs, axis=0)
+        self.mean_acc = mean_acc
+    
+    def result(self):
+        return self.mean_acc
+    
+    def reset_states(self):
+        pass
