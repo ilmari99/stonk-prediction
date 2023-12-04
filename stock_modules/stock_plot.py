@@ -16,11 +16,33 @@ def plot_numpy_arr_cols(arr, ax=None, ind_conversion:dict=None):
         _, ax = plt.subplots()
     for col_id in range(arr.shape[1]):
         if col_id in ind_conversion:
-            label = ind_conversion[col_id]
+            label = ind_conversion.get(col_id, "unk")
         else:
             label = ""
-            ax.plot(arr[:,col_id], label=label)
+        ax.plot(arr[:,col_id], label=label)
     return ax
+
+def plot_mask_and_data(mask, price_data, ind_conversion:dict={}):
+    """ Plot the price data, and mark the buys and sells according to the mask.
+    Make a subplot for each stock, with a maximum of 6 stocks.
+    """
+    assert mask.shape == price_data.shape, f"mask.shape = {mask.shape}, price_data.shape = {price_data.shape}"
+    assert mask.shape[1] <= 6, f"mask.shape[1] = {mask.shape[1]}, but should be <= 6"
+    fig, ax = plt.subplots(mask.shape[1], 1, sharex=True)
+    for stock_idx in range(mask.shape[1]):
+        ax[stock_idx].plot(price_data[:,stock_idx])
+        buy_idx = np.argwhere(mask[:,stock_idx] == -1)
+        sell_idx = np.argwhere(mask[:,stock_idx] == 1)
+        ax[stock_idx].scatter(buy_idx, price_data[buy_idx,stock_idx], color="green", label="Buy")
+        ax[stock_idx].scatter(sell_idx, price_data[sell_idx,stock_idx], color="red", label="Sell")
+        profit = np.dot(mask[:,stock_idx], price_data[:,stock_idx])
+        ax[stock_idx].set_title(f"Trading mask for {ind_conversion.get(stock_idx, 'unk')}, profit: {profit}")
+        ax[stock_idx].legend()
+    fig.suptitle("True and predicted values for 6 stocks")
+    plt.show()
+    return fig, ax
+
+
 
 def plot_strategy_based_on_predictions(data, transformed_data, model,
                                        window_hours, inversion= lambda x : x,
