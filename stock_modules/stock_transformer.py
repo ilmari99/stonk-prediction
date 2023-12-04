@@ -3,12 +3,12 @@ Python module implementing the necessary layers for a classic
 Transformer in Keras
 """
 
-from pydantic import Field, PositiveInt
-from typing_extensions import Annotated
-
 from tensorflow import keras
 import tensorflow as tf
 from keras import layers
+
+from pydantic import Field, PositiveInt
+from typing_extensions import Annotated
 
 UnitFloat = Annotated[float, Field(strict=True, ge=0., le=1.)]
 
@@ -30,8 +30,8 @@ class TemporalEmbedding(layers.Layer):
             # 10-hour day, only for weekdays
             self.hour_embed = layers.Embedding(10, d_model)
             self.weekday_embed = layers.Embedding(5, d_model)
-            self.day_embed = layers.Embedding(32, d_model)
-            self.month_embed = layers.Embedding(13, d_model)
+            self.day_embed = layers.Embedding(31, d_model)
+            self.month_embed = layers.Embedding(12, d_model)
 
             if self.freq == "t":
                 self.minute_embed = layers.Embedding(4, d_model)
@@ -41,13 +41,13 @@ class TemporalEmbedding(layers.Layer):
     def call(self, inputs:keras.Input):
         # Extract the time features from the input tensor
         # hour = inputs[:, :, 3]
-        hour = tf.slice(inputs, [0,0,3], [-1,-1,1])
+        hour = layers.Reshape((-1,))(tf.slice(inputs, [0,0,3], [-1,-1,1]))
         # weekday = inputs[:, :, 2]
-        weekday = tf.slice(inputs, [0,0,2], [-1,-1,1])
+        weekday = layers.Reshape((-1,))(tf.slice(inputs, [0,0,2], [-1,-1,1]))
         # day = inputs[:, :, 1]
-        day = tf.slice(inputs, [0,0,1], [-1,-1,1])
+        day = layers.Reshape((-1,))(tf.slice(inputs, [0,0,1], [-1,-1,1]))
         # month = inputs[:, :, 0]
-        month = tf.slice(inputs, [0,0,0], [-1,-1,1])
+        month = layers.Reshape((-1,))(tf.slice(inputs, [0,0,0], [-1,-1,1]))
 
         # Embed the time features
         if self.embed_type == "fixed":
@@ -90,7 +90,7 @@ class DataEmbedding(layers.Layer):
         self.value_embedding = layers.Conv1D(filters=d_model, kernel_size=3,
                                                 padding="same",
                                                 kernel_initializer="he_normal",
-                                                activation=layers.LeakyReLU)
+                                                activation="leaky_relu")
         self.temporal_embedding = TemporalEmbedding(d_model=self.d_model,
                                                     embed_type=self.embed_type,
                                                     freq=self.freq)
@@ -155,40 +155,3 @@ def transformer_decoder(inputs:keras.Input,
 
     # Add-Normalize
     return layers.LayerNormalization(epsilon=1e-6, axis=(1,2))(x+res)
-
-def build_model(m:PositiveInt, n:PositiveInt,
-                output_dim:PositiveInt=3,
-                head_size:PositiveInt=16,
-                num_heads:PositiveInt=16,
-                ff_dim:PositiveInt=32,
-                num_transformer_blocks:PositiveInt=1,
-                mlp_units:tuple[PositiveInt,...]=(64,),
-                dropout:UnitFloat=0.,
-                mlp_dropout:UnitFloat=0.):
-    input_shape = (m,n)
-
-    # Input declaration -> [BxLxN, BxLx1]
-    context = keras.Input(shape=input_shape)
-    context_stamps = keras.Input(shape=(m,1))
-    inputs = keras.Input(shape=input_shape)
-    input_stamps = keras.Input(shape=(m,1))
-
-    # Encoder layers -> BxLxC
-    x = DataEmbedding(head_size)(context, context_stamps)
-    for _ in range(num_transformer_blocks):
-        x = transformer_encoder(x, head_size, num_heads, ff_dim, dropout)
-
-    # Decoder layers -> BxLxC
-    y = DataEmbedding(inputs, input_stamps)
-    for _ in range(num_transformer_blocks):
-        y = transformer_decoder(y, x, head_size, num_heads, ff_dim, dropout)
-
-    # Output layers -> BxNx3
-    y = layers.Conv1DTranspose(filters=n, kernel_size=3, padding="same")(y)
-    y = layers.Permute((2,1))(y)
-    for dim in mlp_units:
-        y = layers.Dense(dim, activation="relu")(y)
-        y = layers.Dropout(mlp_dropout)(y)
-    outputs = layers.Dense(output_dim, activation="linear")(y)
-
-    return keras.Model([context,context_stamps,inputs,input_stamps],outputs)
