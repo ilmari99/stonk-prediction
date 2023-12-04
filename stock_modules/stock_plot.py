@@ -36,7 +36,7 @@ def plot_mask_and_data(mask, price_data, ind_conversion:dict={}):
         ax[stock_idx].scatter(buy_idx, price_data[buy_idx,stock_idx], color="green", label="Buy")
         ax[stock_idx].scatter(sell_idx, price_data[sell_idx,stock_idx], color="red", label="Sell")
         profit = np.dot(mask[:,stock_idx], price_data[:,stock_idx])
-        ax[stock_idx].set_title(f"Trading mask for {ind_conversion.get(stock_idx, 'unk')}, profit: {profit}")
+        ax[stock_idx].set_title(f"Trading mask for {ind_conversion.get(stock_idx, 'unk')}, profit: {round(profit,2)} euros")
         ax[stock_idx].legend()
     fig.suptitle("True and predicted values for 6 stocks")
     plt.show()
