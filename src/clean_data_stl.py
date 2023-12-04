@@ -28,7 +28,7 @@ def clean_data_stl(df: pd.DataFrame,
         for i in range(len(cleaned_data)):
             if resid[i] < lower_bound or resid[i] > upper_bound:
                 
-                cleaned_data[i] = np.mean(cleaned_data[max(0, i - 1):i + 2])
+                resid[i] = 0
 
-        df[column] = cleaned_data + res.resid
+        df[column] = cleaned_data + resid
     return df
