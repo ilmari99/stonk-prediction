@@ -47,7 +47,7 @@ def create_y_direction(past_prices, curr_prices, threshold = 0.05, to_onehot = T
     return labels
 
 
-def create_batch_xy(m_hours, histories_arr, y_updown=False, y_direction=True, overlap = False, output_scale = (0,1), to_onehot = True, threshold = 0.02, create_labels = True):
+def create_batch_xy(m_hours, histories_arr, y_updown=False, y_direction=True, overlap = False, output_scale = (0,1), to_onehot = True, threshold = 0.002, create_labels = True):
     """
     Batch X data into sequences of length m_hours (from T to T+n), and Y data
     into sequences of length 1 (T+n+1)
