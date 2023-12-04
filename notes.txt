@@ -1,0 +1,34 @@
+Notes 24.11.
+
+Data Pretreatment (Akseli)
+- Outlier removal
+- Timedelta calculation
+- Price differences
+
+
+Architecture: (Ilmari)
+Bidirectional LSTM (Make sure it doesn't use future values)
+- Input: Delta values, timedelta
+- Output: Binary and delta -> Use binary to get the confidence of up/down
+
+Input -> LSTM -> DENSE -> Number of stocks -> Y -> Confidence
+
+
+
+
+Results evaluation (Sergio)
+- Precision and recall
+- How much money we actually make?
+
+
+Optimization of the model (Sergio)
+- Ablations: try without Timedelta
+- Sensitivity: Try without taking out the outliers and then create synthetic data with economical crisis
+
+
+Work division
+
+
+
+
+

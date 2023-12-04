@@ -1,0 +1,17 @@
+rnn:
+  DF_PATH: "HEL_12-10-21to08-11-23.csv"
+  HISTORY_ARRAY_PATH: "./histories_arr.npy"
+  MODEL_PATH: "./rnn.h5"
+  SELECTED_TICKERS_PATH: "./TICKERS_TO_FOLLOW.json"
+  TEST_FRAC: 0.2
+  PREDICT_PRICES: False
+  MHOURS: 12
+  OUTPUT_SCALE: (0,1)
+  RENEW_MODEL: True
+  PATIENCE: 20
+  EPOCHS: 300
+  BATCH_SIZE: 64
+  RECURSE_TO: 50
+  LOSS_FUN_NAME: 'binary_crossentropy'
+  DAY_LENGTH: 10
+  WEEK_LENGTH: 5
