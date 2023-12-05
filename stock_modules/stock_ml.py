@@ -40,6 +40,7 @@ def create_updown_prediction_model_dense(m, n, output_scale=(0, 1)):
     return model
 
 
+
 def create_updown_prediction_model(m, n, output_scale=(0, 1)):
     if output_scale not in [(0, 1), (-1, 1)]:
         raise ValueError("output_scale must be either (0,1) or (-1,1).")
