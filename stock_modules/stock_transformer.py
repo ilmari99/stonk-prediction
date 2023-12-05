@@ -40,14 +40,14 @@ class TemporalEmbedding(layers.Layer):
 
     def call(self, inputs:keras.Input):
         # Extract the time features from the input tensor
-        # hour = inputs[:, :, 3]
-        hour = layers.Reshape((-1,))(tf.slice(inputs, [0,0,3], [-1,-1,1]))
-        # weekday = inputs[:, :, 2]
-        weekday = layers.Reshape((-1,))(tf.slice(inputs, [0,0,2], [-1,-1,1]))
-        # day = inputs[:, :, 1]
-        day = layers.Reshape((-1,))(tf.slice(inputs, [0,0,1], [-1,-1,1]))
         # month = inputs[:, :, 0]
         month = layers.Reshape((-1,))(tf.slice(inputs, [0,0,0], [-1,-1,1]))
+        # day = inputs[:, :, 1]
+        day = layers.Reshape((-1,))(tf.slice(inputs, [0,0,1], [-1,-1,1]))
+        # weekday = inputs[:, :, 2]
+        weekday = layers.Reshape((-1,))(tf.slice(inputs, [0,0,2], [-1,-1,1]))
+        # hour = inputs[:, :, 3]
+        hour = layers.Reshape((-1,))(tf.slice(inputs, [0,0,3], [-1,-1,1]))
 
         # Embed the time features
         if self.embed_type == "fixed":
@@ -96,39 +96,110 @@ class DataEmbedding(layers.Layer):
                                                     freq=self.freq)
         self.dropout = layers.Dropout(rate=self.dropout_rate)
 
-    def call(self, inputs:keras.Input, inputs_mark:keras.Input):
+    def call(self, inputs:keras.Input):
+        x, x_ts = inputs
+
         # Apply the value embedding to the input tensor
-        x_embedded = self.value_embedding(inputs)
+        x_embedded = self.value_embedding(x)
 
         # Apply the temporal embedding to the input tensor
-        x_mark_embedded = self.temporal_embedding(inputs_mark)
+        x_ts_embedded = self.temporal_embedding(x_ts)
 
         # Sum the two embeddings
-        x_embedded = x_embedded + x_mark_embedded
+        x_embedded = x_embedded + x_ts_embedded
 
         # Apply the dropout layer
         x_embedded = self.dropout(x_embedded)
 
         return x_embedded
 
-def transformer_encoder(inputs:keras.Input,
-                        head_size:PositiveInt,
-                        num_heads:PositiveInt,
-                        ff_dim:PositiveInt,
-                        dropout:UnitFloat=0.):
-    # Self-Attention and Add-Normalize
-    x = layers.MultiHeadAttention(
-        key_dim=head_size, num_heads=num_heads, dropout=dropout,
-        )(inputs,inputs)
-    res = layers.LayerNormalization(epsilon=1e-6, axis=2)(x+inputs)
+class Encoder(layers.Layer):
+    """
+    Keras implementation of the canonical transformer encoder (optimized
+    for time-series)
+    """
+    def __init__(self, head_size:PositiveInt,
+                 num_heads:PositiveInt, ff_dim:PositiveInt,
+                 dropout:UnitFloat=0.):
+        super(Encoder, self).__init__()
 
-    # Feed-Forward
-    x = layers.Conv1D(filters=ff_dim, kernel_size=1, activation="relu")(res)
-    x = layers.Conv1D(filters=inputs.shape[-1], kernel_size=1)(x)
-    x = layers.Dropout(dropout)(x)
+        self.head_size = head_size
+        self.num_heads = num_heads
+        self.ff_dim = ff_dim
+        self.dropout = dropout
 
-    # Add-Normalize
-    return layers.LayerNormalization(epsilon=1e-6, axis=2)(x+res)
+        self.self_attention = layers.MultiHeadAttention(key_dim=self.head_size,
+                                             num_heads=self.num_heads,
+                                             dropout=self.dropout)
+        self.norm = layers.LayerNormalization(epsilon=1e-6)
+
+    def build(self, input_shape):
+        self.ff_layer = keras.Sequential(
+            [
+                layers.Conv1D(filters=self.ff_dim,
+                              kernel_size=1,
+                              activation="relu"),
+                layers.Conv1D(filters=input_shape[-1], kernel_size=1),
+                layers.Dropout(rate=self.dropout)
+            ]
+        )
+
+    def call(self, inputs):
+        x = self.self_attention(inputs,inputs)
+        res = self.norm(x+inputs)
+
+        x = self.ff_layer(res)
+        x = self.norm(x+res)
+
+        return x
+
+class Decoder(layers.Layer):
+    """
+    Keras implementation of the canonical transformer decoder (optimized
+    for time-series)
+    """
+    def __init__(self, head_size:PositiveInt,
+                 num_heads:PositiveInt, ff_dim:PositiveInt,
+                 dropout:UnitFloat=0.):
+        super(Decoder, self).__init__()
+
+        self.head_size = head_size
+        self.num_heads = num_heads
+        self.ff_dim = ff_dim
+        self.dropout = dropout
+
+        self.self_attention = layers.MultiHeadAttention(key_dim=self.head_size,
+                                             num_heads=self.num_heads,
+                                             dropout=self.dropout)
+        self.cross_attention = layers.MultiHeadAttention(key_dim=self.head_size,
+                                             num_heads=self.num_heads,
+                                             dropout=self.dropout)
+        self.norm = layers.LayerNormalization(epsilon=1e-6)
+
+    def build(self, input_shape):
+        self.ff_layer = keras.Sequential(
+            [
+                layers.Conv1D(filters=self.ff_dim,
+                              kernel_size=1,
+                              activation="relu"),
+                layers.Conv1D(filters=input_shape[0][-1], kernel_size=1),
+                layers.Dropout(rate=self.dropout)
+            ]
+        )
+
+    def call(self, inputs):
+        target, context = inputs
+
+        x = self.self_attention(target,target,use_causal_mask=True)
+        res = self.norm(x+target)
+
+        x = self.cross_attention(res,context)
+        res = self.norm(x+res)
+
+        x = self.ff_layer(res)
+        x = self.norm(x+res)
+
+        return x
 
 def transformer_decoder(inputs:keras.Input,
                         context:keras.Input,

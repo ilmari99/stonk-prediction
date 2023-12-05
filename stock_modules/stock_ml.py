@@ -7,8 +7,8 @@ from tensorflow import keras
 from keras import layers
 
 from stock_modules.stock_transformer import (DataEmbedding,
-                                             transformer_encoder,
-                                             transformer_decoder)
+                                             Encoder,
+                                             Decoder)
 
 from pydantic import Field, PositiveInt
 from typing_extensions import Annotated
@@ -244,24 +244,25 @@ def create_transformer_model(m:PositiveInt, n:PositiveInt,
                 num_transformer_blocks:PositiveInt=1,
                 mlp_units:tuple[PositiveInt,...]=(64,),
                 dropout:UnitFloat=0.01,
-                mlp_dropout:UnitFloat=0.):
+                mlp_dropout:UnitFloat=0.,
+                class_first=False):
     input_shape = (m,n)
 
     # Input declaration -> [BxLxN, BxLx1]
     context = keras.Input(shape=input_shape)
-    context_stamps = keras.Input(shape=(m,1))
+    context_ts = keras.Input(shape=(m,4))
     inputs = keras.Input(shape=input_shape)
-    input_stamps = keras.Input(shape=(m,1))
+    input_ts = keras.Input(shape=(m,4))
 
     # Encoder layers -> BxLxC
-    x = DataEmbedding(head_size)(context, context_stamps)
+    x = DataEmbedding(head_size)([context, context_ts])
     for _ in range(num_transformer_blocks):
-        x = transformer_encoder(x, head_size, num_heads, ff_dim, dropout)
+        x = Encoder(head_size, num_heads, ff_dim, dropout)(x)
 
     # Decoder layers -> BxLxC
-    y = DataEmbedding(head_size)(inputs, input_stamps)
+    y = DataEmbedding(head_size)([inputs, input_ts])
     for _ in range(num_transformer_blocks):
-        y = transformer_decoder(y, x, head_size, num_heads, ff_dim, dropout)
+        y = Decoder(head_size, num_heads, ff_dim, dropout)([y,x])
 
     # Output layers -> BxNx3
     y = layers.Conv1DTranspose(filters=n, kernel_size=3, padding="same")(y)
@@ -271,4 +272,7 @@ def create_transformer_model(m:PositiveInt, n:PositiveInt,
         y = layers.Dropout(mlp_dropout)(y)
     outputs = layers.Dense(output_dim, activation="linear")(y)
 
-    return keras.Model([context,context_stamps,inputs,input_stamps],outputs)
+    if class_first:
+        outputs = layers.Permute((2,1))(outputs)
+
+    return keras.Model([context,context_ts,inputs,input_ts],outputs)

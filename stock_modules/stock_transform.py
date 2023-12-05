@@ -188,7 +188,7 @@ def create_transformer_onehot_xy(
                     m_hours+1,
                     diff_data_np.shape[1]],
                   dtype=np.float32)
-    x_mark = np.empty([x.shape[0], x.shape[1], 4],
+    x_ts = np.empty([x.shape[0], x.shape[1], 4],
                       dtype=np.int32)
 
     y = np.zeros([diff_data_np.shape[0]-m_hours,
@@ -202,10 +202,10 @@ def create_transformer_onehot_xy(
 
         aux_ts = [datetime.strptime(ts, date_format)
                   for ts in timestamps_np[t:t+m_hours+1]]
-        x_mark[t,:,0] = [stamp.month-1 for stamp in aux_ts]
-        x_mark[t,:,1] = [stamp.weekday() for stamp in aux_ts]
-        x_mark[t,:,2] = [stamp.day-1 for stamp in aux_ts]
-        x_mark[t,:,3] = [stamp.hour-7 for stamp in aux_ts]
+        x_ts[t,:,0] = [stamp.month-1 for stamp in aux_ts]
+        x_ts[t,:,1] = [stamp.day-1 for stamp in aux_ts]
+        x_ts[t,:,2] = [stamp.weekday() for stamp in aux_ts]
+        x_ts[t,:,3] = [stamp.hour-7 for stamp in aux_ts]
 
     # Class 0: Static
     mask[np.abs(aux_diff_np) < static_thr*aux_data_np] = 1
@@ -223,5 +223,5 @@ def create_transformer_onehot_xy(
     mask[:,:] = 0
 
     return (tf.convert_to_tensor(x, dtype=tf.float32),
-            tf.convert_to_tensor(x_mark, dtype=tf.int32),
+            tf.convert_to_tensor(x_ts, dtype=tf.int32),
             tf.convert_to_tensor(y, dtype=tf.float32))
