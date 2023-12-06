@@ -88,7 +88,7 @@ def create_batch_xy(m_hours, histories_arr, y_updown=False, y_direction=True, ov
             # We predict whether the price will go up, down or stay flat
             labels = create_y_direction(past_prices, curr_prices, threshold=threshold, to_onehot=to_onehot)
             y_matrix.append(labels)
-    if y_direction and to_onehot:
+    if y_direction and to_onehot and create_labels:
 
         # Then the y_matrix is a list of 2D arrays
         #  Convert it to numpy 3D array,
