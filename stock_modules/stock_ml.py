@@ -28,6 +28,28 @@ def create_direction_prediction_model(m, n):
     return model
 
 
+def create_direction_prediction_model_rnn(m, n):
+    """ Create a model which predicts the direction of the stock price.
+    The direction is up, down or flat for each stock,
+    so the output is a (nx3) matrix.
+    """
+    inputs = tf.keras.layers.Input(shape=(m, n))
+    x = tf.keras.layers.BatchNormalization()(inputs)
+    x = tf.keras.layers.SimpleRNN(64, return_sequences=True)(x)
+    x = tf.keras.layers.Flatten()(x)
+    x = tf.keras.layers.Dense(64, activation="relu")(x)
+    # The output is a (nx3) matrix, where column is a one-hot vector (probability distribution over the classes)
+    x = tf.keras.layers.Dense(n*3, activation="relu")(x)
+    outputs = tf.keras.layers.Reshape((3,n))(x)
+    # Apply softmax to each column
+    outputs = tf.keras.layers.Softmax(axis=1)(outputs)
+    model = tf.keras.Model(inputs=inputs, outputs=outputs)
+    #model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
+    return model
+
+
+
+
 def create_updown_prediction_model_dense(m, n, output_scale=(0, 1)):
     """ Dense model"""
     if output_scale not in [(0, 1), (-1, 1)]:
