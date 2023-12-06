@@ -61,7 +61,7 @@ def strategy_mask_from_direction_model(transformed_data : np.ndarray,
         ith_predictions = Y_pred[i,:,:]
         # Calculate the argmax for eacl column
         ith_predictions = np.argmax(ith_predictions, axis=0)
-        print(ith_predictions)
+        #print(ith_predictions)
         # Check all stocks
         for stock_idx in range(transformed_data.shape[1]):
             # If we are not holding the stock, buy if the price is predicted to go up
