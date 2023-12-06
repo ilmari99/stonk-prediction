@@ -10,11 +10,14 @@ def create_direction_prediction_model(m, n):
     so the output is a (nx3) matrix.
     """
     inputs = tf.keras.layers.Input(shape=(m, n))
-    x = tf.keras.layers.BatchNormalization()(inputs)
-    x = tf.keras.layers.LSTM(64, return_sequences=True)(x)
-    x = tf.keras.layers.LSTM(16, return_sequences=True)(x)
+    #x = tf.keras.layers.BatchNormalization()(inputs)
+    #x = tf.keras.layers.Bidirectional(
+    x = tf.keras.layers.LSTM(200, return_sequences=True)(inputs)
+    #)(x)
     x = tf.keras.layers.Flatten()(x)
-    x = tf.keras.layers.Dense(64, activation="relu")(x)
+    x = tf.keras.layers.Dense(128, activation="relu")(x)
+    x = tf.keras.layers.Dropout(0.1)(x)
+    x = tf.keras.layers.Dense(42, activation="relu")(x)
     # The output is a (nx3) matrix, where column is a one-hot vector (probability distribution over the classes)
     x = tf.keras.layers.Dense(n*3, activation="relu")(x)
     outputs = tf.keras.layers.Reshape((3,n))(x)
@@ -223,5 +226,5 @@ class MultiAccuracy(tf.keras.metrics.Metric):
     def result(self):
         return self.mean_acc
     
-    def reset_states(self):
+    def reset_state(self):
         pass
