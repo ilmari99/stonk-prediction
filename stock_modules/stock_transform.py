@@ -207,18 +207,18 @@ def create_transformer_onehot_xy(
         x_ts[t,:,2] = [stamp.weekday() for stamp in aux_ts]
         x_ts[t,:,3] = [stamp.hour-7 for stamp in aux_ts]
 
-    # Class 0: Static
-    mask[np.abs(aux_diff_np) < static_thr*aux_data_np] = 1
+    # Class 0: Decreasing
+    mask[aux_diff_np < -static_thr*aux_data_np] = 1
     y[:,:,0] = mask
     mask[:,:] = 0
 
-    # Class 1: Increasing
-    mask[aux_diff_np > static_thr*aux_data_np] = 1
+    # Class 1: Static
+    mask[np.abs(aux_diff_np) < static_thr*aux_data_np] = 1
     y[:,:,1] = mask
     mask[:,:] = 0
 
-    # Class 2: Decreasing
-    mask[aux_diff_np < -static_thr*aux_data_np] = 1
+    # Class 2: Increasing
+    mask[aux_diff_np > static_thr*aux_data_np] = 1
     y[:,:,2] = mask
     mask[:,:] = 0
 
