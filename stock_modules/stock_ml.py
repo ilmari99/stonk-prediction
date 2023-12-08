@@ -277,7 +277,7 @@ class MultiAccuracy(keras.metrics.Metric):
     def result(self):
         return self.mean_acc
 
-    def reset_states(self):
+    def reset_state(self):
         pass
 
 def create_transformer_model(m:PositiveInt, n:PositiveInt,
