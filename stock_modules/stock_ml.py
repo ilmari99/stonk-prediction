@@ -259,7 +259,7 @@ class MultiAccuracy(keras.metrics.Metric):
         self.start_idx = 0 if not has_timedelta else 1
         self.accuracy = keras.metrics.CategoricalAccuracy()
 
-    def update_state(self, y_true, y_pred, sample_weight=None):
+    def update_state(self, y_true, y_pred, **kwargs):
         # Calculate the accuracy for each stock
         accs = []
         for i in range(self.start_idx, y_true.shape[2]):
