@@ -178,7 +178,7 @@ def add_time_delta_column(df : pd.DataFrame, date_col_name="date"):
 def create_transformer_onehot_xy(
         m_hours:PositiveInt, diff_data_np:np.ndarray,
         data_np:np.ndarray, timestamps_np:np.ndarray,
-        static_thr:UnitFloat = 0.05,
+        static_thr:UnitFloat = 0.002,
         date_format:str = "%Y-%m-%d %H:%M:%S"
     ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
     aux_diff_np = diff_data_np[m_hours:,:]
