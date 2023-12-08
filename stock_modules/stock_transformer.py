@@ -31,9 +31,9 @@ class TemporalEmbedding(layers.Layer):
 
         # Create the embedding layers
         if self.embed_type == "fixed":
-            # 10-hour day, only for weekdays
-            self.hour_embed = layers.Embedding(10, d_model)
-            self.weekday_embed = layers.Embedding(5, d_model)
+            # Generalized Embedding (All zero-based)
+            self.hour_embed = layers.Embedding(24, d_model)
+            self.weekday_embed = layers.Embedding(7, d_model)
             self.day_embed = layers.Embedding(31, d_model)
             self.month_embed = layers.Embedding(12, d_model)
 
