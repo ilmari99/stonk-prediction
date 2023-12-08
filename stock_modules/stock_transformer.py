@@ -10,15 +10,19 @@ from keras import layers
 from pydantic import Field, PositiveInt
 from typing_extensions import Annotated
 
+keras.saving.get_custom_objects().clear()
+
 UnitFloat = Annotated[float, Field(strict=True, ge=0., le=1.)]
 
+@keras.saving.register_keras_serializable(package="Transformer")
 class TemporalEmbedding(layers.Layer):
     """
     Keras implementation of the Temporal embedding layer for Autoformers.
     """
     def __init__(self, d_model:PositiveInt,
                  embed_type:str="fixed",
-                 freq:str="h"):
+                 freq:str="h",
+                 **kwargs):
         super(TemporalEmbedding, self).__init__()
 
         self.d_model = d_model
@@ -35,8 +39,35 @@ class TemporalEmbedding(layers.Layer):
 
             if self.freq == "t":
                 self.minute_embed = layers.Embedding(4, d_model)
+            else:
+                self.minute_embed = None
+
+            self.time_embed = None
         else:
             self.time_embed = layers.Embedding(1000, d_model)
+
+            self.minute_embed = None
+            self.hour_embed = None
+            self.weekday_embed = None
+            self.day_embed = None
+            self.month_embed = None
+
+    def get_config(self):
+        config = super().get_config()
+        config.update(
+            {
+                "d_model": self.d_model,
+                "embed_type": self.embed_type,
+                "freq": self.freq,
+                "minute_embed": self.minute_embed,
+                "hour_embed": self.hour_embed,
+                "weekday_embed": self.weekday_embed,
+                "day_embed": self.day_embed,
+                "month_embed": self.month_embed
+            }
+        )
+
+        return config
 
     def call(self, inputs:keras.Input):
         # Extract the time features from the input tensor
@@ -71,6 +102,7 @@ class TemporalEmbedding(layers.Layer):
 
         return x_embedded
 
+@keras.saving.register_keras_serializable(package="Transformer")
 class DataEmbedding(layers.Layer):
     """
     Keras implementation of the Positionless Data embedding layer for
@@ -78,7 +110,8 @@ class DataEmbedding(layers.Layer):
     """
     def __init__(self, d_model:PositiveInt,
                  embed_type:str="fixed", freq:str="h",
-                 dropout_rate:UnitFloat=0.1):
+                 dropout_rate:UnitFloat=0.1,
+                 **kwargs):
         super(DataEmbedding, self).__init__()
 
         self.d_model = d_model
@@ -95,6 +128,23 @@ class DataEmbedding(layers.Layer):
                                                     embed_type=self.embed_type,
                                                     freq=self.freq)
         self.dropout = layers.Dropout(rate=self.dropout_rate)
+
+    def get_config(self):
+        config = super().get_config()
+
+        config.update(
+            {
+                "d_model": self.d_model,
+                "embed_type": self.embed_type,
+                "freq": self.freq,
+                "dropout_rate": self.dropout_rate,
+                "value_embedding": self.value_embedding,
+                "temporal_embedding": self.temporal_embedding,
+                "dropout": self.dropout
+            }
+        )
+
+        return config
 
     def call(self, inputs:keras.Input):
         x, x_ts = inputs
@@ -113,6 +163,7 @@ class DataEmbedding(layers.Layer):
 
         return x_embedded
 
+@keras.saving.register_keras_serializable(package="Transformer")
 class Encoder(layers.Layer):
     """
     Keras implementation of the canonical transformer encoder (optimized
@@ -120,17 +171,18 @@ class Encoder(layers.Layer):
     """
     def __init__(self, head_size:PositiveInt,
                  num_heads:PositiveInt, ff_dim:PositiveInt,
-                 dropout:UnitFloat=0.):
+                 dropout_rate:UnitFloat=0.,
+                 **kwargs):
         super(Encoder, self).__init__()
 
         self.head_size = head_size
         self.num_heads = num_heads
         self.ff_dim = ff_dim
-        self.dropout = dropout
+        self.dropout_rate = dropout_rate
 
         self.self_attention = layers.MultiHeadAttention(key_dim=self.head_size,
                                              num_heads=self.num_heads,
-                                             dropout=self.dropout)
+                                             dropout=self.dropout_rate)
         self.norm = layers.LayerNormalization(epsilon=1e-6)
 
     def build(self, input_shape):
@@ -140,9 +192,26 @@ class Encoder(layers.Layer):
                               kernel_size=1,
                               activation="relu"),
                 layers.Conv1D(filters=input_shape[-1], kernel_size=1),
-                layers.Dropout(rate=self.dropout)
+                layers.Dropout(rate=self.dropout_rate)
             ]
         )
+
+    def get_config(self):
+        config = super().get_config()
+
+        config.update(
+            {
+                "head_size": self.head_size,
+                "num_heads": self.num_heads,
+                "ff_dim": self.ff_dim,
+                "dropout_rate": self.dropout_rate,
+                "self_attention": self.self_attention,
+                "norm": self.norm,
+                "ff_layer": self.ff_layer
+            }
+        )
+
+        return config
 
     def call(self, inputs):
         x = self.self_attention(inputs,inputs)
@@ -153,6 +222,7 @@ class Encoder(layers.Layer):
 
         return x
 
+@keras.saving.register_keras_serializable(package="Transformer")
 class Decoder(layers.Layer):
     """
     Keras implementation of the canonical transformer decoder (optimized
@@ -160,20 +230,21 @@ class Decoder(layers.Layer):
     """
     def __init__(self, head_size:PositiveInt,
                  num_heads:PositiveInt, ff_dim:PositiveInt,
-                 dropout:UnitFloat=0.):
+                 dropout_rate:UnitFloat=0.,
+                 **kwargs):
         super(Decoder, self).__init__()
 
         self.head_size = head_size
         self.num_heads = num_heads
         self.ff_dim = ff_dim
-        self.dropout = dropout
+        self.dropout_rate = dropout_rate
 
         self.self_attention = layers.MultiHeadAttention(key_dim=self.head_size,
                                              num_heads=self.num_heads,
-                                             dropout=self.dropout)
+                                             dropout=self.dropout_rate)
         self.cross_attention = layers.MultiHeadAttention(key_dim=self.head_size,
                                              num_heads=self.num_heads,
-                                             dropout=self.dropout)
+                                             dropout=self.dropout_rate)
         self.norm = layers.LayerNormalization(epsilon=1e-6)
 
     def build(self, input_shape):
@@ -183,9 +254,27 @@ class Decoder(layers.Layer):
                               kernel_size=1,
                               activation="relu"),
                 layers.Conv1D(filters=input_shape[0][-1], kernel_size=1),
-                layers.Dropout(rate=self.dropout)
+                layers.Dropout(rate=self.dropout_rate)
             ]
         )
+
+    def get_config(self):
+        config = super().get_config()
+
+        config.update(
+            {
+                "head_size": self.head_size,
+                "num_heads": self.num_heads,
+                "ff_dim": self.ff_dim,
+                "dropout_rate": self.dropout_rate,
+                "self_attention": self.self_attention,
+                "cross_attention": self.cross_attention,
+                "norm": self.norm,
+                "ff_layer": self.ff_layer
+            }
+        )
+
+        return config
 
     def call(self, inputs):
         target, context = inputs
@@ -200,29 +289,3 @@ class Decoder(layers.Layer):
         x = self.norm(x+res)
 
         return x
-
-def transformer_decoder(inputs:keras.Input,
-                        context:keras.Input,
-                        head_size:PositiveInt,
-                        num_heads:PositiveInt,
-                        ff_dim:PositiveInt,
-                        dropout:UnitFloat=0.):
-    # Self-Attention and Add-Normalize
-    x = layers.MultiHeadAttention(
-        key_dim=head_size, num_heads=num_heads, dropout=dropout,
-        )(inputs,inputs,use_causal_mask=True)
-    res = layers.LayerNormalization(epsilon=1e-6, axis=(1,2))(x+inputs)
-
-    # Cross-Attention and Add-Normalize
-    x = layers.MultiHeadAttention(
-        key_dim=head_size, num_heads=num_heads, dropout=dropout,
-        )(res,context)
-    res = layers.LayerNormalization(epsilon=1e-6, axis=(1,2))(x+res)
-
-    # Feed-Forward
-    x = layers.Conv1D(filters=ff_dim, kernel_size=1, activation="relu")(res)
-    x = layers.Conv1D(filters=inputs.shape[-1], kernel_size=1)(x)
-    x = layers.Dropout(dropout)(x)
-
-    # Add-Normalize
-    return layers.LayerNormalization(epsilon=1e-6, axis=(1,2))(x+res)
