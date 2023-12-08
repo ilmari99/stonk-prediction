@@ -53,7 +53,7 @@ def calculate_profit_on_invest_strategy(data : np.ndarray,
 def strategy_mask_from_direction_model(transformed_data:np.ndarray,
                                        window_hours:int,
                                        model:keras.Model,
-                                       is_transformer:bool,
+                                       is_transformer:bool = False,
                                        original_data:np.ndarray = None,
                                        time_stamps:np.ndarray = None
                                     ) -> np.ndarray:

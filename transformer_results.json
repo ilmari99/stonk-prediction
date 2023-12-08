@@ -1,1 +1,0 @@
-[{"serial": "transformer_model_20231207180915", "memory_length": 20, "head_size": 32, "num_heads": 32, "ff_dim": 64, "num_transformer_blocks": 4, "mlp_units": 64, "loss": 12.089888572692871, "multi_accuracy_1": 0.27239087224006653}]
