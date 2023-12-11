@@ -29,7 +29,7 @@ def plot_mask_and_data(mask, price_data, ind_conversion:dict=None):
         f"mask.shape = {mask.shape}, price_data.shape = {price_data.shape}"
     assert mask.shape[1] <= 6, \
         f"mask.shape[1] = {mask.shape[1]}, but should be <= 6"
-    fig, ax = plt.subplots(mask.shape[1], 1, sharex=True)
+    fig, ax = plt.subplots(mask.shape[1], 1, sharex=True, figsize=(16,10))
     for stock_idx in range(mask.shape[1]):
         ax[stock_idx].plot(price_data[:,stock_idx])
         buy_idx = np.argwhere(mask[:,stock_idx] == -1)
@@ -42,12 +42,10 @@ def plot_mask_and_data(mask, price_data, ind_conversion:dict=None):
                               color="red", label="Sell")
         profit = np.dot(mask[:,stock_idx], price_data[:,stock_idx])
         ax[stock_idx].set_title(
-            f"""
-            Trading mask for {ind_conversion.get(stock_idx, 'unk')},
-            profit: {round(profit,2)} euros
-            """)
+            f"Trading mask for {ind_conversion.get(stock_idx, 'unk')} - "+
+            f"profit: {round(profit,2)} euros")
         ax[stock_idx].legend()
-    fig.suptitle("True and predicted values for 6 stocks")
+    fig.suptitle("Model-optimal Trading Strategy")
     plt.show()
     return fig, ax
 
