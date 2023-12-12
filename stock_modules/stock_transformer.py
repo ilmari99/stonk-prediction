@@ -21,7 +21,7 @@ class Encoder(layers.Layer):
                  num_heads:PositiveInt, ff_dim:PositiveInt,
                  dropout_rate:UnitFloat=0.,
                  **kwargs):
-        super(Encoder, self).__init__()
+        super(Encoder, self).__init__(**kwargs)
 
         self.head_size = head_size
         self.num_heads = num_heads
@@ -83,7 +83,7 @@ class Decoder(layers.Layer):
                  num_heads:PositiveInt, ff_dim:PositiveInt,
                  dropout_rate:UnitFloat=0.,
                  **kwargs):
-        super(Decoder, self).__init__()
+        super(Decoder, self).__init__(**kwargs)
 
         self.head_size = head_size
         self.num_heads = num_heads
