@@ -6,9 +6,9 @@ import tensorflow as tf
 from tensorflow import keras
 from keras import layers
 
-from stock_modules.stock_transformer import (DataEmbedding,
-                                             Encoder,
+from stock_modules.stock_transformer import (Encoder,
                                              Decoder)
+from stock_modules.stock_embed import DataEmbedding
 
 from pydantic import Field, PositiveInt
 from typing_extensions import Annotated
