@@ -133,6 +133,23 @@ class Corr_Encoder(layers.Layer):
     """
     Keras implementation of the autoformer encoder
     """
-    def __init__(self, **kwargs):
+    def __init__(self, d_ff:PositiveInt=None,
+                 moving_avg:PositiveInt=25, dropout=0.1,
+                 activation="relu", **kwargs):
         super(Corr_Encoder, self).__init__(**kwargs)
-        
+
+        self.d_ff = d_ff
+        self.moving_avg = moving_avg
+        self.dropout = dropout
+        self.activation = activation
+    
+    def build(self, input_shape):
+        self.d_ff = self.d_ff or 4*input_shape[0][-1]
+        self.ff_layer = keras.Sequential(
+            [
+                layers.Conv1D(filters=self.d_ff)
+            ]
+        )
+
+    def _series_decomp(self, inputs):
+        return inputs
