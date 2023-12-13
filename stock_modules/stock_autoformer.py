@@ -132,27 +132,63 @@ class CorrLayer(layers.Layer):
         return self.out_proj(out)
 
 @keras.saving.register_keras_serializable(package="Autoformer")
-class CorrEncoder(layers.Layer):
+class CorrEncoderLayer(layers.Layer):
     """
     Keras implementation of the autoformer encoder
     """
-    def __init__(self, d_ff:PositiveInt=None,
-                 moving_avg:PositiveInt=25, dropout=0.1,
+    def __init__(self, k_factor:PositiveInt = 1,
+                 n_heads:PositiveInt = 1,
+                 d_ff:PositiveInt=None,
+                 moving_avg:PositiveInt=25,
+                 dropout_rate=0.1,
                  activation="relu", **kwargs):
-        super(CorrEncoder, self).__init__(**kwargs)
+        super(CorrEncoderLayer, self).__init__(**kwargs)
 
         self.d_ff = d_ff
-        self.moving_avg = moving_avg
-        self.dropout = dropout
+        self.dropout_rate = dropout_rate
         self.activation = activation
+
+        self.moving_avg = layers.AvgPool1D(pool_size=moving_avg, strides=1,
+                                           padding="same")
+        self.corr_layer = CorrLayer(k_factor=k_factor,
+                                    n_heads=n_heads)
 
     def build(self, input_shape):
         self.d_ff = self.d_ff or 4*input_shape[0][-1]
         self.ff_layer = keras.Sequential(
             [
-                layers.Conv1D(filters=self.d_ff)
+                layers.Conv1D(filters=self.d_ff, kernel_size=1,
+                              use_bias=False,
+                              activation=self.activation),
+                layers.Dropout(self.dropout_rate),
+                layers.Conv1D(filters=input_shape[0][-1], kernel_size=1,
+                              use_bias=False, activation=None),
+                layers.Dropout(self.dropout_rate)
             ]
         )
 
+    def get_config(self):
+        config = super().get_config()
+        config.update(
+            {
+                "d_ff": self.d_ff,
+                "dropout_rate": self.dropout_rate,
+                "activation": self.activation,
+                "moving_avg": self.moving_avg,
+                "corr_layer": self.corr_layer
+            }
+        )
+        return config
+
     def _series_decomp(self, inputs):
+        trend = self.moving_avg(inputs)
+        seasonality = inputs - trend
+        return seasonality, trend
+
+    def call(self, inputs):
         return inputs
+
+@keras.saving.register_keras_serializable(package="Autoformer")
+class CorrEncoder(layers.Layer):
+    def __init__(self, **kwargs):
+        super(CorrEncoder, self).__init__(**kwargs)
