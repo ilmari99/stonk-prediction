@@ -15,7 +15,7 @@ from typing_extensions import Annotated
 UnitFloat = Annotated[float, Field(strict=True, ge=0., le=1.)]
 
 @keras.saving.register_keras_serializable(package="Autoformer")
-class Corr_Layer(layers.Layer):
+class CorrLayer(layers.Layer):
     """
     Keras implementation of the autocorrelation attention
     mechanism
@@ -25,13 +25,13 @@ class Corr_Layer(layers.Layer):
                  d_keys = None,
                  d_values = None,
                  **kwargs):
-        super(Corr_Layer, self).__init__(**kwargs)
+        super(CorrLayer, self).__init__(**kwargs)
 
         self.k_factor = k_factor
         self.n_heads = n_heads
-        
+
         self.d_keys = d_keys
-        self.d_values = d_values 
+        self.d_values = d_values
 
         self.query_proj = None
         self.key_proj = None
@@ -75,7 +75,7 @@ class Corr_Layer(layers.Layer):
         init_index = tf.repeat(
             tf.range(length)[tf.newaxis,tf.newaxis,tf.newaxis,:],
             repeats=[batch,head,channel,1])
-        
+
         # Find top K
         top_k = int(self.k_factor * math.log(length))
         weights, delay = tf.math.top_k(corr, top_k)
@@ -90,59 +90,62 @@ class Corr_Layer(layers.Layer):
             tmp_delay = init_index + tf.expand_dims(delay[..., idx], -1)
             pattern = tf.gather(tmp_values, tmp_delay, axis=-1)
             delays_agg += pattern * tf.expand_dims(tmp_corr[..., idx], -1)
-        
+
         return delays_agg
-    
+
     def call(self, inputs):
         queries, keys, values = inputs
 
-        B, L, _ = queries.shape
-        _, S, _ = keys.shape
-        H = self.n_heads
+        b_len, q_len, _ = queries.shape
+        _, k_len, _ = keys.shape
+        n_heads = self.n_heads
 
-        queries = tf.reshape(self.query_proj(queries), [B, L, H, -1])
-        keys = tf.reshape(self.key_proj(keys), [B, S, H, -1])
-        values = tf.reshape(self.value_proj(values), [B, S, H, -1])
+        queries = tf.reshape(self.query_proj(queries),
+                             [b_len, q_len, n_heads, -1])
+        keys = tf.reshape(self.key_proj(keys), [b_len, k_len, n_heads, -1])
+        values = tf.reshape(self.value_proj(values),
+                            [b_len, k_len, n_heads, -1])
 
         # Ensure dimension compatibility
-        if L > S:
-            zeros = tf.zeros_like(queries[:,:(L-S),:,:], dtype=tf.float32)
+        if q_len > k_len:
+            zeros = tf.zeros_like(queries[:,:(q_len-k_len),:,:],
+                                  dtype=tf.float32)
             keys = tf.concat([keys,zeros], axis=1)
             values = tf.concat([values,zeros], axis=1)
         else:
-            keys = keys[:,:L,:,:]
-            values = values[:,:L,:,:]
+            keys = keys[:,:q_len,:,:]
+            values = values[:,:q_len,:,:]
 
         # Period-based dependencies
         q_fft = tf.signal.rfft(tf.transpose(queries, [0,2,3,1]))
         k_fft = tf.signal.rfft(tf.transpose(keys, [0,2,3,1]))
         corr = tf.signal.irfft(q_fft*tf.math.conj(k_fft),
-                               fft_length=L)
-        
+                               fft_length=q_len)
+
         out = tf.transpose(
             self._time_delay_agg_full(tf.transpose(values,[0,2,3,1]),
                                       corr),
             perm=[0,3,1,2]
         )
-        out = tf.reshape(out, [B,L,-1])
+        out = tf.reshape(out, [b_len,q_len,-1])
 
         return self.out_proj(out)
 
 @keras.saving.register_keras_serializable(package="Autoformer")
-class Corr_Encoder(layers.Layer):
+class CorrEncoder(layers.Layer):
     """
     Keras implementation of the autoformer encoder
     """
     def __init__(self, d_ff:PositiveInt=None,
                  moving_avg:PositiveInt=25, dropout=0.1,
                  activation="relu", **kwargs):
-        super(Corr_Encoder, self).__init__(**kwargs)
+        super(CorrEncoder, self).__init__(**kwargs)
 
         self.d_ff = d_ff
         self.moving_avg = moving_avg
         self.dropout = dropout
         self.activation = activation
-    
+
     def build(self, input_shape):
         self.d_ff = self.d_ff or 4*input_shape[0][-1]
         self.ff_layer = keras.Sequential(
