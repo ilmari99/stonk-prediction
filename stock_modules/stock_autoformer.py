@@ -24,6 +24,7 @@ class CorrLayer(layers.Layer):
                  n_heads:PositiveInt,
                  d_keys = None,
                  d_values = None,
+                 dropout_rate:UnitFloat = 0.,
                  **kwargs):
         super(CorrLayer, self).__init__(**kwargs)
 
@@ -32,6 +33,8 @@ class CorrLayer(layers.Layer):
 
         self.d_keys = d_keys
         self.d_values = d_values
+
+        self.dropout = layers.Dropout(dropout_rate)
 
         self.query_proj = None
         self.key_proj = None
@@ -127,9 +130,9 @@ class CorrLayer(layers.Layer):
                                       corr),
             perm=[0,3,1,2]
         )
-        out = tf.reshape(out, [b_len,q_len,-1])
+        out = self.out_proj(tf.reshape(out, [b_len,q_len,-1]))
 
-        return self.out_proj(out)
+        return self.dropout(out)
 
 @keras.saving.register_keras_serializable(package="Autoformer")
 class CorrEncoderLayer(layers.Layer):
@@ -140,7 +143,7 @@ class CorrEncoderLayer(layers.Layer):
                  n_heads:PositiveInt = 1,
                  d_ff:PositiveInt=None,
                  moving_avg:PositiveInt=25,
-                 dropout_rate=0.1,
+                 dropout_rate:UnitFloat=0.1,
                  activation="relu", **kwargs):
         super(CorrEncoderLayer, self).__init__(**kwargs)
 
@@ -151,7 +154,10 @@ class CorrEncoderLayer(layers.Layer):
         self.moving_avg = layers.AvgPool1D(pool_size=moving_avg, strides=1,
                                            padding="same")
         self.corr_layer = CorrLayer(k_factor=k_factor,
-                                    n_heads=n_heads)
+                                    n_heads=n_heads,
+                                    dropout_rate=dropout_rate)
+        
+        self.ff_layer = None
 
     def build(self, input_shape):
         self.d_ff = self.d_ff or 4*input_shape[0][-1]
@@ -175,7 +181,8 @@ class CorrEncoderLayer(layers.Layer):
                 "dropout_rate": self.dropout_rate,
                 "activation": self.activation,
                 "moving_avg": self.moving_avg,
-                "corr_layer": self.corr_layer
+                "corr_layer": self.corr_layer,
+                "ff_layer": self.ff_layer
             }
         )
         return config
@@ -186,9 +193,50 @@ class CorrEncoderLayer(layers.Layer):
         return seasonality, trend
 
     def call(self, inputs):
-        return inputs
+        x = self.corr_layer([inputs,inputs,inputs])
+        x = inputs + x
+        x, _ = self._series_decomp(x)
+
+        y = self.ff_layer(x)
+        y, _ = self._series_decomp(x+y)
+
+        return y
 
 @keras.saving.register_keras_serializable(package="Autoformer")
 class CorrEncoder(layers.Layer):
-    def __init__(self, **kwargs):
+    def __init__(self,
+                 n_layers:PositiveInt,
+                 k_factor:PositiveInt = 1,
+                 n_heads:PositiveInt = 1,
+                 d_ff:PositiveInt=None,
+                 moving_avg:PositiveInt=25,
+                 dropout_rate:UnitFloat=0.1,
+                 activation="relu",
+                 **kwargs):
         super(CorrEncoder, self).__init__(**kwargs)
+        self.corr_layers = [
+            CorrEncoderLayer(k_factor=k_factor,
+                             n_heads=n_heads,
+                             d_ff=d_ff,
+                             moving_avg=moving_avg,
+                             dropout_rate=dropout_rate,
+                             activation=activation)
+                for _ in range(n_layers)
+        ]
+        self.norm_layer = layers.Normalization([-2,-1])
+
+    def get_config(self):
+        config = super().get_config()
+        config.update(
+            {
+                "corr_layers": self.corr_layers,
+                "norm_layer": self.norm_layer
+            }
+        )
+    
+    def call(self, inputs):
+        x = inputs
+        for layer in self.corr_layers:
+            x = layer(x)
+
+        return self.norm_layer(x)
