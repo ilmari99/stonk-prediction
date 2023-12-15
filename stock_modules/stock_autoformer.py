@@ -79,9 +79,9 @@ class CorrLayer(layers.Layer):
         length = values.shape[3]
 
         # Index init
-        init_index = tf.repeat(
+        init_index = tf.tile(
             tf.range(length)[tf.newaxis,tf.newaxis,tf.newaxis,:],
-            repeats=[batch,head,channel,1])
+            tf.constant([batch,head,channel,1], dtype=tf.int64))
 
         # Find top K
         top_k = int(self.k_factor * math.log(length))
@@ -91,7 +91,7 @@ class CorrLayer(layers.Layer):
         tmp_corr = layers.Softmax(axis=-1)(weights)
 
         # Aggregation
-        tmp_values = tf.repeat(values, [1,1,1,2])
+        tmp_values = tf.tile(values, [1,1,1,2])
         delays_agg = tf.zeros_like(values, dtype=tf.float32)
         for idx in range(top_k):
             tmp_delay = init_index + tf.expand_dims(delay[..., idx], -1)
@@ -389,26 +389,32 @@ class Autoformer(keras.Model):
         super(Autoformer, self).__init__(**kwargs)
 
         # Model hyper-parameters
-        self.d_model = config["d_model"]
-        self.dropout_rate = config["dropout_rate"]
-        self.d_ff = config["d_ff"]
+        self.d_model = config["d_model"] # embedding depth
+        self.dropout_rate = config["dropout_rate"] # self-explanatory
+        self.d_ff = config["d_ff"] # dimensionality of the feed-forward layers
+        self.d_out = config["d_out"]
 
         # Encoder/Decoder dimensionality
-        self.m = config["M"]
-        self.n = config["N"]
+        self.n = config["N"] # number of Encoder Layers
+        self.m = config["M"] # number of Decoder Layers
 
         # Multi-head dimensionality
-        self.k = config["k"]
-        self.h = config["h"]
+        self.k = config["k"] # top_k = k * log(L)
+        self.h = config["h"] # number of heads
 
         # Time parameters
-        self.o = config["O"]
-        self.ts = config["Ts"]
+        self.o = config["O"] # prediction horizon
+        self.ts = config["Ts"] # dataset sampling time
         self.tau = config["tau"] # moving average window
+        self.dt_fmt = config.get("dt_fmt") or "yyyy-mm-dd HH:MM:SS"
 
 
         self.embed = DataEmbedding(d_model=self.d_model,
                                    dropout_rate=self.dropout_rate)
+
+        self.moving_avg = layers.AvgPool1D(pool_size=self.tau,
+                                           strides=1,
+                                           padding="same")
 
         self.encoder = CorrEncoder(n_layers=self.n,
                                    k_factor=self.k,
@@ -416,22 +422,79 @@ class Autoformer(keras.Model):
                                    d_ff=self.d_ff_h,
                                    moving_avg=self.tau,
                                    dropout_rate=self.dropout_rate)
+        
+        self.decoder = CorrDecoder(d_out=self.d_out,
+                                   n_layers=self.m,
+                                   k_factor=self.k,
+                                   n_heads=self.h,
+                                   d_ff=self.d_ff,
+                                   moving_avg=self.tau,
+                                   dropout_rate=self.dropout_rate)
 
-    def _init_decoder_input(self):
-        return None
+    def _timestamps_to_marks(self, timestamps:tf.Tensor):
+        def timestamp2tuple(dt_str):
+            current_ts = datetime.strptime(dt_str.decode("ascii"),
+                                            self.dt_fmt)
+            return (current_ts.month,
+                    current_ts.day,
+                    current_ts.weekday(),
+                    current_ts.hour,
+                    current_ts.minute)
 
-    def _timestamps_to_marks(self):
-        return None
+        marks = [[timestamp2tuple(x) for x in batch]
+                    for batch in timestamps.numpy()]
+        return tf.convert_to_tensor(marks)
 
-    def _gen_future_timestamps(self, current_ts:datetime):
-        return np.arange(current_ts + self.ts,
+
+    def _gen_future_timestamps(self, current_ts_string:tf.string):
+        current_ts = datetime.strptime(
+            current_ts_string.numpy().decode("ascii"),
+            self.dt_fmt)
+        dt_array = np.arange(current_ts + self.ts,
                          current_ts + (self.o+1)*self.ts,
                          self.ts).astype(datetime)
+        return tf.convert_to_tensor([ts.strftime(self.dt_fmt)
+                                        for ts in dt_array],
+                                    dtype=tf.string)
+
+    def _init_decoder_input(self, x_enc:tf.Tensor, x_enc_timestamps:tf.Tensor):
+        b, l, d = x_enc.shape
+        half_input = x_enc[:,l//2:,:]
+        half_trend = self.moving_avg(half_input)
+        half_season = half_input - half_trend
+
+        xs = tf.concat([half_season, tf.zeros([b,self.o,d])], axis=1)
+        xt = tf.concat([half_trend,
+                        tf.tile(
+                            tf.math.reduce_mean(x_enc, axis=1, keepdims=True),
+                            [1,self.o,1])
+                        ],
+                        axis=1)
+        half_timestamps = x_enc_timestamps[:,l//2:,:]
+        future_timestamps = tf.vectorized_map(lambda batch :
+                                    self._gen_future_timestamps(batch[-1]),
+                                half_timestamps)
+        half_timestamps = tf.concat([half_timestamps, future_timestamps],
+                                    axis=1)
+
+        return xs, xt, half_timestamps
 
     def call(self, inputs):
         # Enc Input -> Dec Input
-        # Enc call
-        # Dec call
-        # Trend+Seasonality join
+        x_enc, x_enc_timestamps = inputs
+        x_dec_s, x_dec_t, x_dec_timestamps = \
+            self._init_decoder_input(x_enc, x_enc_timestamps)
 
-        return inputs
+        # Apply embedding
+        x_enc = self.embed([x_enc, x_enc_timestamps])
+        x_dec_s = self.embed([x_dec_s, x_dec_timestamps])
+
+        # Enc call
+        y_enc = self.encoder(x_enc)
+        # Dec call
+        y_dec_s, y_dec_t = self.decoder([x_dec_s,y_enc,x_dec_t])
+
+        # Trend+Seasonality join
+        y_dec = y_dec_s + y_dec_t
+
+        return y_dec
