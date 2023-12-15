@@ -422,7 +422,7 @@ class Autoformer(keras.Model):
                                    d_ff=self.d_ff_h,
                                    moving_avg=self.tau,
                                    dropout_rate=self.dropout_rate)
-        
+
         self.decoder = CorrDecoder(d_out=self.d_out,
                                    n_layers=self.m,
                                    k_factor=self.k,
