@@ -21,7 +21,7 @@ class TemporalEmbedding(layers.Layer):
                  embed_type:str="fixed",
                  freq:str="h",
                  **kwargs):
-        super(TemporalEmbedding, self).__init__()
+        super(TemporalEmbedding, self).__init__(**kwargs)
 
         self.d_model = d_model
         self.embed_type = embed_type
@@ -110,7 +110,7 @@ class DataEmbedding(layers.Layer):
                  embed_type:str="fixed", freq:str="h",
                  dropout_rate:UnitFloat=0.1,
                  **kwargs):
-        super(DataEmbedding, self).__init__()
+        super(DataEmbedding, self).__init__(**kwargs)
 
         self.d_model = d_model
         self.embed_type = embed_type

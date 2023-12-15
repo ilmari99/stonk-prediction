@@ -4,10 +4,14 @@ Autoformer in Keras
 """
 
 import math
+from datetime import datetime
+import numpy as np
 
 import tensorflow as tf
 from tensorflow import keras
 from keras import layers
+
+from stock_modules.stock_embed import DataEmbedding
 
 from pydantic import Field, PositiveInt
 from typing_extensions import Annotated
@@ -375,3 +379,59 @@ class CorrDecoder(layers.Layer):
         x = self.out_proj(x)
 
         return x, xt
+
+@keras.saving.register_keras_serializable(package="Autoformer")
+class Autoformer(keras.Model):
+    """
+    Keras implementation of the Autoformer
+    """
+    def __init__(self, config:dict, **kwargs):
+        super(Autoformer, self).__init__(**kwargs)
+
+        # Model hyper-parameters
+        self.d_model = config["d_model"]
+        self.dropout_rate = config["dropout_rate"]
+        self.d_ff = config["d_ff"]
+
+        # Encoder/Decoder dimensionality
+        self.m = config["M"]
+        self.n = config["N"]
+
+        # Multi-head dimensionality
+        self.k = config["k"]
+        self.h = config["h"]
+
+        # Time parameters
+        self.o = config["O"]
+        self.ts = config["Ts"]
+        self.tau = config["tau"] # moving average window
+
+
+        self.embed = DataEmbedding(d_model=self.d_model,
+                                   dropout_rate=self.dropout_rate)
+
+        self.encoder = CorrEncoder(n_layers=self.n,
+                                   k_factor=self.k,
+                                   n_heads=self.h,
+                                   d_ff=self.d_ff_h,
+                                   moving_avg=self.tau,
+                                   dropout_rate=self.dropout_rate)
+
+    def _init_decoder_input(self):
+        return None
+
+    def _timestamps_to_marks(self):
+        return None
+
+    def _gen_future_timestamps(self, current_ts:datetime):
+        return np.arange(current_ts + self.ts,
+                         current_ts + (self.o+1)*self.ts,
+                         self.ts).astype(datetime)
+
+    def call(self, inputs):
+        # Enc Input -> Dec Input
+        # Enc call
+        # Dec call
+        # Trend+Seasonality join
+
+        return inputs

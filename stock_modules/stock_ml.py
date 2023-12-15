@@ -260,6 +260,8 @@ class MultiAccuracy(keras.metrics.Metric):
         self.accuracy = keras.metrics.CategoricalAccuracy()
 
     def update_state(self, y_true, y_pred, **kwargs):
+        super().update_state(**kwargs)
+
         # Calculate the accuracy for each stock
         accs = []
         for i in range(self.start_idx, y_true.shape[2]):
