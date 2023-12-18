@@ -4,8 +4,6 @@ Autoformer in Keras
 """
 
 import math
-from datetime import datetime
-import numpy as np
 
 import tensorflow as tf
 from tensorflow import keras
@@ -73,15 +71,14 @@ class CorrLayer(layers.Layer):
 
     def _time_delay_agg_full(self, values:tf.Tensor,
                              corr:tf.Tensor) -> tf.Tensor:
-        batch = values.shape[0]
-        head = values.shape[1]
-        channel = values.shape[2]
-        length = values.shape[3]
+        length = values.shape[-1]
 
         # Index init
         init_index = tf.tile(
             tf.range(length)[tf.newaxis,tf.newaxis,tf.newaxis,:],
-            tf.constant([batch,head,channel,1], dtype=tf.int64))
+            tf.concat([tf.shape(values)[:3], tf.constant([1], dtype=tf.int32)],
+                      axis=-1)
+        )
 
         # Find top K
         top_k = int(self.k_factor * math.log(length))
@@ -95,7 +92,7 @@ class CorrLayer(layers.Layer):
         delays_agg = tf.zeros_like(values, dtype=tf.float32)
         for idx in range(top_k):
             tmp_delay = init_index + tf.expand_dims(delay[..., idx], -1)
-            pattern = tf.gather(tmp_values, tmp_delay, axis=-1)
+            pattern = tf.gather(tmp_values, tmp_delay, axis=-1, batch_dims=3)
             delays_agg += pattern * tf.expand_dims(tmp_corr[..., idx], -1)
 
         return delays_agg
@@ -103,15 +100,17 @@ class CorrLayer(layers.Layer):
     def call(self, inputs):
         queries, keys, values = inputs
 
-        b_len, q_len, _ = queries.shape
+        _, q_len, d_out = queries.shape
         _, k_len, _ = keys.shape
         n_heads = self.n_heads
 
-        queries = tf.reshape(self.query_proj(queries),
-                             [b_len, q_len, n_heads, -1])
-        keys = tf.reshape(self.key_proj(keys), [b_len, k_len, n_heads, -1])
+        queries = self.query_proj(queries)
+        queries = tf.reshape(queries,
+                             [-1, q_len, n_heads, self.d_keys*self.n_heads])
+        keys = tf.reshape(self.key_proj(keys),
+                          [-1, k_len, n_heads, self.d_keys*self.n_heads])
         values = tf.reshape(self.value_proj(values),
-                            [b_len, k_len, n_heads, -1])
+                            [-1, k_len, n_heads, self.d_values*self.n_heads])
 
         # Ensure dimension compatibility
         if q_len > k_len:
@@ -127,14 +126,14 @@ class CorrLayer(layers.Layer):
         q_fft = tf.signal.rfft(tf.transpose(queries, [0,2,3,1]))
         k_fft = tf.signal.rfft(tf.transpose(keys, [0,2,3,1]))
         corr = tf.signal.irfft(q_fft*tf.math.conj(k_fft),
-                               fft_length=q_len)
+                               fft_length=[q_len])
 
         out = tf.transpose(
             self._time_delay_agg_full(tf.transpose(values,[0,2,3,1]),
                                       corr),
             perm=[0,3,1,2]
         )
-        out = self.out_proj(tf.reshape(out, [b_len,q_len,-1]))
+        out = self.out_proj(tf.reshape(out, [-1,q_len,d_out]))
 
         return self.dropout(out)
 
@@ -164,14 +163,14 @@ class CorrEncoderLayer(layers.Layer):
         self.ff_layer = None
 
     def build(self, input_shape):
-        self.d_ff = self.d_ff or 4*input_shape[0][-1]
+        self.d_ff = self.d_ff or 4*input_shape[-1]
         self.ff_layer = keras.Sequential(
             [
                 layers.Conv1D(filters=self.d_ff, kernel_size=1,
                               use_bias=False,
                               activation=self.activation),
                 layers.Dropout(self.dropout_rate),
-                layers.Conv1D(filters=input_shape[0][-1], kernel_size=1,
+                layers.Conv1D(filters=input_shape[-1], kernel_size=1,
                               use_bias=False, activation=None),
                 layers.Dropout(self.dropout_rate)
             ]
@@ -373,6 +372,7 @@ class CorrDecoder(layers.Layer):
         x, cross, xt = inputs
         for dec_layer in self.dec_layers:
             x, residual_trend = dec_layer([x,cross])
+            print(residual_trend.shape.as_list())
             xt += residual_trend
 
         x = self.norm_layer(x)
@@ -392,7 +392,7 @@ class Autoformer(keras.Model):
         self.d_model = config["d_model"] # embedding depth
         self.dropout_rate = config["dropout_rate"] # self-explanatory
         self.d_ff = config["d_ff"] # dimensionality of the feed-forward layers
-        self.d_out = config["d_out"]
+        self.d_out = config["d_out"] # number of output channels
 
         # Encoder/Decoder dimensionality
         self.n = config["N"] # number of Encoder Layers
@@ -404,9 +404,7 @@ class Autoformer(keras.Model):
 
         # Time parameters
         self.o = config["O"] # prediction horizon
-        self.ts = config["Ts"] # dataset sampling time
         self.tau = config["tau"] # moving average window
-        self.dt_fmt = config.get("dt_fmt") or "yyyy-mm-dd HH:MM:SS"
 
 
         self.embed = DataEmbedding(d_model=self.d_model,
@@ -419,7 +417,7 @@ class Autoformer(keras.Model):
         self.encoder = CorrEncoder(n_layers=self.n,
                                    k_factor=self.k,
                                    n_heads=self.h,
-                                   d_ff=self.d_ff_h,
+                                   d_ff=self.d_ff,
                                    moving_avg=self.tau,
                                    dropout_rate=self.dropout_rate)
 
@@ -431,63 +429,37 @@ class Autoformer(keras.Model):
                                    moving_avg=self.tau,
                                    dropout_rate=self.dropout_rate)
 
-    def _timestamps_to_marks(self, timestamps:tf.Tensor):
-        def timestamp2tuple(dt_str):
-            current_ts = datetime.strptime(dt_str.decode("ascii"),
-                                            self.dt_fmt)
-            return (current_ts.month,
-                    current_ts.day,
-                    current_ts.weekday(),
-                    current_ts.hour,
-                    current_ts.minute)
-
-        marks = [[timestamp2tuple(x) for x in batch]
-                    for batch in timestamps.numpy()]
-        return tf.convert_to_tensor(marks)
-
-
-    def _gen_future_timestamps(self, current_ts_string:tf.string):
-        current_ts = datetime.strptime(
-            current_ts_string.numpy().decode("ascii"),
-            self.dt_fmt)
-        dt_array = np.arange(current_ts + self.ts,
-                         current_ts + (self.o+1)*self.ts,
-                         self.ts).astype(datetime)
-        return tf.convert_to_tensor([ts.strftime(self.dt_fmt)
-                                        for ts in dt_array],
-                                    dtype=tf.string)
-
-    def _init_decoder_input(self, x_enc:tf.Tensor, x_enc_timestamps:tf.Tensor):
-        b, l, d = x_enc.shape
+    def _init_decoder_input(self, x_enc:tf.Tensor,
+                            x_enc_marks:tf.Tensor,
+                            x_dec_marks:tf.Tensor):
+        _, l, _ = x_enc.shape
         half_input = x_enc[:,l//2:,:]
         half_trend = self.moving_avg(half_input)
         half_season = half_input - half_trend
 
-        xs = tf.concat([half_season, tf.zeros([b,self.o,d])], axis=1)
-        xt = tf.concat([half_trend,
+        x_dec_s = tf.pad(half_season, tf.constant([[0,0],[0,self.o],[0,0]]),
+                         mode="CONSTANT", constant_values=0)
+        x_dec_t = tf.concat([half_trend,
                         tf.tile(
                             tf.math.reduce_mean(x_enc, axis=1, keepdims=True),
                             [1,self.o,1])
                         ],
                         axis=1)
-        half_timestamps = x_enc_timestamps[:,l//2:,:]
-        future_timestamps = tf.vectorized_map(lambda batch :
-                                    self._gen_future_timestamps(batch[-1]),
-                                half_timestamps)
-        half_timestamps = tf.concat([half_timestamps, future_timestamps],
+        half_marks = x_enc_marks[:,l//2:,:]
+        x_dec_marks = tf.concat([half_marks, x_dec_marks],
                                     axis=1)
 
-        return xs, xt, half_timestamps
+        return x_dec_s, x_dec_t, x_dec_marks
 
     def call(self, inputs):
         # Enc Input -> Dec Input
-        x_enc, x_enc_timestamps = inputs
-        x_dec_s, x_dec_t, x_dec_timestamps = \
-            self._init_decoder_input(x_enc, x_enc_timestamps)
+        x_enc, x_enc_marks, x_dec_marks = inputs
+        x_dec_s, x_dec_t, x_dec_marks = \
+            self._init_decoder_input(x_enc, x_enc_marks, x_dec_marks)
 
         # Apply embedding
-        x_enc = self.embed([x_enc, x_enc_timestamps])
-        x_dec_s = self.embed([x_dec_s, x_dec_timestamps])
+        x_enc = self.embed([x_enc, x_enc_marks])
+        x_dec_s = self.embed([x_dec_s, x_dec_marks])
 
         # Enc call
         y_enc = self.encoder(x_enc)

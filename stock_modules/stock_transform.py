@@ -188,14 +188,14 @@ def create_transformer_onehot_xy(
                     m_hours+1,
                     diff_data_np.shape[1]],
                   dtype=np.float32)
-    x_ts = np.empty([x.shape[0], x.shape[1], 4],
+    x_ts = np.empty([x.shape[0], x.shape[1], 5],
                       dtype=np.int32)
 
     y = np.zeros([diff_data_np.shape[0]-m_hours,
                     diff_data_np.shape[1],
                     3],
                   dtype=np.float32)
-    mask = np.zeros([y.shape[0], y.shape[1]])
+    mask = np.zeros(y.shape[:2])
 
     for t in range(x.shape[0]):
         x[t,:,:] = diff_data_np[t:t+m_hours+1,:]
@@ -206,6 +206,7 @@ def create_transformer_onehot_xy(
         x_ts[t,:,1] = [stamp.day-1 for stamp in aux_ts]
         x_ts[t,:,2] = [stamp.weekday() for stamp in aux_ts]
         x_ts[t,:,3] = [stamp.hour for stamp in aux_ts]
+        x_ts[t,:,4] = [stamp.minute for stamp in aux_ts]
 
     # Class 0: Decreasing
     mask[aux_diff_np < -static_thr*aux_data_np] = 1

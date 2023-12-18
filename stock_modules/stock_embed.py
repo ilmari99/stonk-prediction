@@ -3,6 +3,8 @@ Python module implementing sequence-embedding layers for
 Transformer-like architectures in Keras
 """
 
+from datetime import datetime
+
 import tensorflow as tf
 from tensorflow import keras
 from keras import layers
@@ -36,7 +38,7 @@ class TemporalEmbedding(layers.Layer):
             self.month_embed = layers.Embedding(12, d_model)
 
             if self.freq == "t":
-                self.minute_embed = layers.Embedding(4, d_model)
+                self.minute_embed = layers.Embedding(60, d_model)
             else:
                 self.minute_embed = None
 
@@ -159,3 +161,18 @@ class DataEmbedding(layers.Layer):
         x_embedded = self.dropout(x_embedded)
 
         return x_embedded
+
+def timestamps_to_marks(timestamps:list[str], pred_horizon:PositiveInt,
+                        dt_fmt:str="%Y-%m-%d %H:%M:%S"):
+    def timestamp2tuple(dt_str:str):
+        current_ts = datetime.strptime(dt_str, dt_fmt)
+        return (current_ts.month,
+                current_ts.day,
+                current_ts.weekday(),
+                current_ts.hour,
+                current_ts.minute)
+
+    marks = [[timestamp2tuple(x)
+                for x in timestamps[idx:idx+pred_horizon]]
+                    for idx in range(len(timestamps)-pred_horizon+1)]
+    return tf.convert_to_tensor(marks)

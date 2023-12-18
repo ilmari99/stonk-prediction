@@ -1,5 +1,6 @@
 {
   "editor.indentSize": "tabSize",
   "editor.detectIndentation": true,
-  "editor.tabSize": 4
+  "editor.tabSize": 4,
+  "julia.environmentPath": "/home/sergiovaneg/stonk-prediction"
 }
