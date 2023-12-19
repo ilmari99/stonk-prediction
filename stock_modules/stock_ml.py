@@ -230,7 +230,7 @@ class SingleChannelMSE(keras.losses.Loss):
         super().__init__(**kwargs)
         self.loss_fn = loss_fn
         self.channel = channel
-    
+
     def call(self, y_true, y_pred):
         return self.loss_fn(y_true, y_pred[self.channel])
 
