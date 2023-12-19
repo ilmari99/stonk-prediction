@@ -223,7 +223,7 @@ class SkipTDLoss(keras.losses.Loss):
         return self.base_loss_fun(y_true[:,1:], y_pred[:,1:])
 
 class SingleChannelMSE(keras.losses.Loss):
-    def __init__(self, channel:PositiveInt,
+    def __init__(self, channel:PositiveInt = 0,
                  loss_fn = keras.losses.MeanSquaredError(),
                  **kwargs):
         super().__init__(**kwargs)
