@@ -2,6 +2,7 @@
 Python module handling model creation and training.
 """
 
+from keras.src.utils.losses_utils import ReductionV2
 import tensorflow as tf
 from tensorflow import keras
 from keras import layers
@@ -221,6 +222,17 @@ class SkipTDLoss(keras.losses.Loss):
     def call(self, y_true, y_pred):
         # Skip first column
         return self.base_loss_fun(y_true[:,1:], y_pred[:,1:])
+
+class SingleChannelMSE(keras.losses.Loss):
+    def __init__(self, channel:PositiveInt,
+                 loss_fn = keras.losses.MeanSquaredError(),
+                 **kwargs):
+        super().__init__(**kwargs)
+        self.loss_fn = loss_fn
+        self.channel = channel
+    
+    def call(self, y_true, y_pred):
+        return self.loss_fn(y_true, y_pred[self.channel])
 
 class MultiSoftmaxLoss(keras.losses.Loss):
     """
