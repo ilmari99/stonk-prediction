@@ -6,6 +6,8 @@ sandbox.py
 Stock.py
 TimeSeriesDataset.py
 __*
+keras-tuner*
+tb-logs*
 ##
 
 
