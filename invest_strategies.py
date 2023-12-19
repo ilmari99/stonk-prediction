@@ -65,10 +65,12 @@ def strategy_mask_from_direction_model(transformed_data:np.ndarray,
     mask = np.zeros(transformed_data.shape)
 
     if is_transformer:
-        x, x_ts, _ = create_transformer_onehot_xy(window_hours,
+        x, x_ts, _ = create_transformer_onehot_xy(window_hours-1,
                                                   transformed_data,
                                                   original_data,
                                                   time_stamps)
+        print(f"x shape: {x.shape}")
+        print(f"x_ts shape: {x_ts.shape}")
         y_pred = model.predict([x, x_ts, x, x_ts])
     else:
         x, _ = create_batch_xy(window_hours, transformed_data,
