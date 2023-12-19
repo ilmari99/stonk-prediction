@@ -166,8 +166,8 @@ def timestamps_to_marks(timestamps:list[str], pred_horizon:PositiveInt,
                         dt_fmt:str="%Y-%m-%d %H:%M:%S"):
     def timestamp2tuple(dt_str:str):
         current_ts = datetime.strptime(dt_str, dt_fmt)
-        return (current_ts.month,
-                current_ts.day,
+        return (current_ts.month-1,
+                current_ts.day-1,
                 current_ts.weekday(),
                 current_ts.hour,
                 current_ts.minute)
