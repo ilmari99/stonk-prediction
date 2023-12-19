@@ -548,9 +548,9 @@ class Autoformer(layers.Layer):
         return x_dec_s, x_dec_t, x_dec_marks
 
     def _classifier(self, y_dec):
-        yc_0 = tf.exp(-(.5*tf.subtract(y_dec[:,-1:,:], -1)))
-        yc_1 = tf.exp(-(.5*tf.subtract(y_dec[:,-1:,:], 0)))
-        yc_2 = tf.exp(-(.5*tf.subtract(y_dec[:,-1:,:], 1)))
+        yc_0 = tf.exp(-(.5*tf.subtract(y_dec[:,:1,:], -1)))
+        yc_1 = tf.exp(-(.5*tf.subtract(y_dec[:,:1,:], 0)))
+        yc_2 = tf.exp(-(.5*tf.subtract(y_dec[:,:1,:], 1)))
 
         return tf.concat([yc_0,yc_1,yc_2], axis=1)
 
