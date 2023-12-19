@@ -92,7 +92,11 @@ class CorrLayer(layers.Layer):
         delays_agg = tf.zeros_like(values, dtype=tf.float32)
         for idx in range(top_k):
             tmp_delay = init_index + tf.expand_dims(delay[..., idx], -1)
-            pattern = tf.gather(tmp_values, tmp_delay, axis=-1, batch_dims=3)
+            pattern = tf.gather_nd(tmp_values,
+                                   tf.expand_dims(tmp_delay,-1),
+                                   batch_dims=3)
+            # tf.assert_equal(pattern[3,1,1,0],
+            #                tmp_values[3,1,1,delay[3,1,1,idx]])
             delays_agg += pattern * tf.expand_dims(tmp_corr[..., idx], -1)
 
         return delays_agg
@@ -104,13 +108,12 @@ class CorrLayer(layers.Layer):
         _, k_len, _ = keys.shape
         n_heads = self.n_heads
 
-        queries = self.query_proj(queries)
-        queries = tf.reshape(queries,
-                             [-1, q_len, n_heads, self.d_keys*self.n_heads])
+        queries = tf.reshape(self.query_proj(queries),
+                             [-1, q_len, n_heads, self.d_keys])
         keys = tf.reshape(self.key_proj(keys),
-                          [-1, k_len, n_heads, self.d_keys*self.n_heads])
+                          [-1, k_len, n_heads, self.d_keys])
         values = tf.reshape(self.value_proj(values),
-                            [-1, k_len, n_heads, self.d_values*self.n_heads])
+                            [-1, k_len, n_heads, self.d_values])
 
         # Ensure dimension compatibility
         if q_len > k_len:
@@ -238,6 +241,7 @@ class CorrEncoder(layers.Layer):
                 "norm_layer": self.norm_layer
             }
         )
+        return config
 
     def call(self, inputs):
         x = inputs
@@ -367,18 +371,18 @@ class CorrDecoder(layers.Layer):
                 "norm_layer": self.norm_layer
             }
         )
+        return config
 
     def call(self, inputs):
-        x, cross, xt = inputs
+        xs, cross, xt = inputs
         for dec_layer in self.dec_layers:
-            x, residual_trend = dec_layer([x,cross])
-            print(residual_trend.shape.as_list())
+            xs, residual_trend = dec_layer([xs,cross])
             xt += residual_trend
 
-        x = self.norm_layer(x)
-        x = self.out_proj(x)
+        xs = self.norm_layer(xs)
+        xs = self.out_proj(xs)
 
-        return x, xt
+        return xs, xt
 
 @keras.saving.register_keras_serializable(package="Autoformer")
 class Autoformer(keras.Model):
@@ -429,6 +433,30 @@ class Autoformer(keras.Model):
                                    moving_avg=self.tau,
                                    dropout_rate=self.dropout_rate)
 
+    def get_config(self):
+        config = super().get_config()
+
+        config.update(
+            {
+                "d_model": self.d_model,
+                "dropout_rate": self.dropout_rate,
+                "d_ff": self.d_ff,
+                "d_out": self.d_out,
+                "n": self.n,
+                "m": self.m,
+                "k": self.k,
+                "h": self.h,
+                "o": self.o,
+                "tau": self.tau,
+                "embed": self.embed,
+                "moving_avg": self.moving_avg,
+                "encoder": self.encoder,
+                "decoder": self.decoder
+            }
+        )
+
+        return config
+
     def _init_decoder_input(self, x_enc:tf.Tensor,
                             x_enc_marks:tf.Tensor,
                             x_dec_marks:tf.Tensor):
@@ -451,6 +479,13 @@ class Autoformer(keras.Model):
 
         return x_dec_s, x_dec_t, x_dec_marks
 
+    def _classifier(self, y_dec):
+        yc_0 = tf.exp(-(.5*tf.subtract(y_dec[:,-1:,:], -1)))
+        yc_1 = tf.exp(-(.5*tf.subtract(y_dec[:,-1:,:], 0)))
+        yc_2 = tf.exp(-(.5*tf.subtract(y_dec[:,-1:,:], 1)))
+
+        return tf.concat([yc_0,yc_1,yc_2], axis=1)
+
     def call(self, inputs):
         # Enc Input -> Dec Input
         x_enc, x_enc_marks, x_dec_marks = inputs
@@ -467,6 +502,6 @@ class Autoformer(keras.Model):
         y_dec_s, y_dec_t = self.decoder([x_dec_s,y_enc,x_dec_t])
 
         # Trend+Seasonality join
-        y_dec = y_dec_s + y_dec_t
+        y_dec = y_dec_s[:,-self.o:,:] + y_dec_t[:,-self.o:,:]
 
-        return y_dec
+        return self._classifier(y_dec)

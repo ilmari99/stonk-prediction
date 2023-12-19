@@ -8,6 +8,7 @@ from tensorflow import keras
 import numpy as np
 from stock_modules.stock_transform import (create_batch_xy,
                                            create_transformer_onehot_xy)
+from stock_modules.stock_embed import timestamps_to_marks
 
 def calculate_optimal_invest_strategy(data : np.ndarray) -> np.ndarray:
     """ Calculates the optimaltrading mask for the data. This assumes that we
@@ -53,7 +54,7 @@ def calculate_profit_on_invest_strategy(data : np.ndarray,
 def strategy_mask_from_direction_model(transformed_data:np.ndarray,
                                        window_hours:int,
                                        model:keras.Model,
-                                       is_transformer:bool = False,
+                                       model_type:str = "",
                                        original_data:np.ndarray = None,
                                        time_stamps:np.ndarray = None
                                     ) -> np.ndarray:
@@ -64,12 +65,20 @@ def strategy_mask_from_direction_model(transformed_data:np.ndarray,
 
     mask = np.zeros(transformed_data.shape)
 
-    if is_transformer:
+    if model_type=="transformer":
         x, x_ts, _ = create_transformer_onehot_xy(window_hours,
                                                   transformed_data,
                                                   original_data,
                                                   time_stamps)
         y_pred = model.predict([x, x_ts, x, x_ts])
+    elif model_type == "autoformer":
+        x, x_ts, _ = create_transformer_onehot_xy(window_hours,
+                                                  transformed_data,
+                                                  original_data,
+                                                  time_stamps)
+        y_ts = timestamps_to_marks(
+            time_stamps[window_hours:], 1)
+        y_pred = model.predict([x,x_ts,y_ts])
     else:
         x, _ = create_batch_xy(window_hours, transformed_data,
                            overlap=True, y_direction=True,
