@@ -9,6 +9,7 @@ from keras import layers
 from stock_modules.stock_transformer import (Encoder,
                                              Decoder)
 from stock_modules.stock_embed import DataEmbedding
+from stock_modules.stock_autoformer import Autoformer
 
 from pydantic import Field, PositiveInt
 from typing_extensions import Annotated
@@ -320,3 +321,16 @@ def create_transformer_model(m:PositiveInt, n:PositiveInt,
         outputs = layers.Permute((2,1))(outputs)
 
     return keras.Model([context,context_ts,inputs,input_ts],outputs)
+
+def create_autoformer_model(m:PositiveInt, n:PositiveInt, **config):
+    x_enc_shape = (m,n)
+    x_enc_marks_shape = (m,5)
+    x_dec_marks_shape = (config["O"], 5)
+
+    x_enc = keras.Input(shape=x_enc_shape)
+    x_enc_marks = keras.Input(shape=x_enc_marks_shape)
+    x_dec_marks = keras.Input(shape=x_dec_marks_shape)
+
+    y_dec_classes = Autoformer(**config)([x_enc,x_enc_marks,x_dec_marks])
+
+    return keras.Model([x_enc,x_enc_marks,x_dec_marks], y_dec_classes)

@@ -4,6 +4,7 @@ Autoformer in Keras
 """
 
 import math
+import numpy as np
 
 import tensorflow as tf
 from tensorflow import keras
@@ -11,7 +12,7 @@ from keras import layers
 
 from stock_modules.stock_embed import DataEmbedding
 
-from pydantic import Field, PositiveInt
+from pydantic import Field, PositiveInt, PositiveFloat
 from typing_extensions import Annotated
 
 UnitFloat = Annotated[float, Field(strict=True, ge=0., le=1.)]
@@ -385,12 +386,79 @@ class CorrDecoder(layers.Layer):
         return xs, xt
 
 @keras.saving.register_keras_serializable(package="Autoformer")
-class Autoformer(keras.Model):
+class CorrDecoderInit(layers.Layer):
+    """
+    Generate the placeholder decoder input from the encoder input
+    and the target timestamps.
+    """
+    def __init__(self, o:PositiveInt, tau:PositiveInt, **kwargs):
+        super(CorrDecoderInit, self).__init__(**kwargs)
+
+        self.o = o
+        self.tau = tau
+
+        self.moving_avg = layers.AvgPool1D(pool_size=self.tau,
+                                           strides=1,
+                                           padding="same")
+
+    def get_config(self):
+        config = super().get_config()
+        config.update(
+            {
+                "o": self.o,
+                "tau": self.tau,
+                "moving_avg": self.moving_avg
+            }
+        )
+        return config
+
+    def call(self, inputs):
+        x_enc, x_enc_marks, x_dec_marks = inputs
+
+        _, l, _ = x_enc.shape
+        half_input = x_enc[:,l//2:,:]
+        half_trend = self.moving_avg(half_input)
+        half_season = half_input - half_trend
+
+        x_dec_s = tf.pad(half_season, tf.constant([[0,0],[0,self.o],[0,0]]),
+                         mode="CONSTANT", constant_values=0)
+        x_dec_t = tf.concat([half_trend,
+                        tf.tile(
+                            tf.math.reduce_mean(x_enc, axis=1, keepdims=True),
+                            [1,self.o,1])
+                        ],
+                        axis=1)
+        half_marks = x_enc_marks[:,l//2:,:]
+        x_dec_marks = tf.concat([half_marks, x_dec_marks],
+                                    axis=1)
+
+        return x_dec_s, x_dec_t, x_dec_marks
+
+@keras.saving.register_keras_serializable(package="Autoformer")
+class CustomClassifier(layers.Layer):
+    """
+    Time-series to stock behaviour classifier.
+    """
+    def __init__(self, num_classes:PositiveInt=3,
+                 gamma:PositiveFloat=0.5, **kwargs):
+        super(CustomClassifier, self).__init__(**kwargs)
+        self.num_classes = num_classes
+        self.gamma = gamma
+
+    def call(self, inputs):
+        return tf.concat(
+                [tf.exp(-(self.gamma*tf.subtract(inputs[:,:1,:], ref)))
+                    for ref in np.linspace(-1,1,self.num_classes)],
+                axis=1
+            )
+
+@keras.saving.register_keras_serializable(package="Autoformer")
+class Autoformer(layers.Layer):
     """
     Keras implementation of the Autoformer
     """
-    def __init__(self, config:dict, **kwargs):
-        super(Autoformer, self).__init__(**kwargs)
+    def __init__(self, **config):
+        super(Autoformer, self).__init__()
 
         # Model hyper-parameters
         self.d_model = config["d_model"] # embedding depth
@@ -442,11 +510,11 @@ class Autoformer(keras.Model):
                 "dropout_rate": self.dropout_rate,
                 "d_ff": self.d_ff,
                 "d_out": self.d_out,
-                "n": self.n,
-                "m": self.m,
+                "N": self.n,
+                "M": self.m,
                 "k": self.k,
                 "h": self.h,
-                "o": self.o,
+                "O": self.o,
                 "tau": self.tau,
                 "embed": self.embed,
                 "moving_avg": self.moving_avg,
